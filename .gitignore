@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------------------------------
+# harmoniq-server. Everything below is local or secret and must never be pushed.
+# ---------------------------------------------------------------------------------------------------
+
+# Local environment (created by scripts/setup.*; everything lives inside this folder)
+.venv/
+venv/
+tools/
+data/
+
+# Secrets and configuration
+.env
+.env.*
+!.env.example
+secrets/
+*cookies*.txt
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Test, lint and type-check caches / reports
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.tox/
+.nox/
+
+# Logs and stray media (downloads belong in data/, which is ignored above)
+*.log
+*.part
+*.ytdl
+*.m4a
+*.opus
+*.mp3
+*.webm
+
+# Docker overrides with machine-specific settings
+docker-compose.override.yml
+compose.override.yml
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

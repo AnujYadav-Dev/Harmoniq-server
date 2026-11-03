@@ -1,0 +1,54 @@
+name: harmoniq
+
+services:
+  server:
+    build: .
+    image: harmoniq-server:latest
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      TOOLS_DIR: ""
+    user: "${HARMONIQ_UID:-1000}:${HARMONIQ_GID:-1000}"   # owner of ./data on Linux hosts
+    ports:
+      - "127.0.0.1:8000:8000"       # only the tunnel / reverse proxy on this host talks to it
+    volumes:
+      - ./data:/data
+      - ./secrets:/run/secrets:ro   # optional cookies.txt → YTDLP_COOKIES_FILE=/run/secrets/cookies.txt
+    restart: unless-stopped
+    stop_grace_period: 1m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Optional: only if YouTube starts bot-checking this machine (docs/deployment.md §6).
+  # Enable with:  docker compose --profile pot up -d   and set POT_PROVIDER_URL=http://pot-provider:4416
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest   # keep in step with the plugin version in requirements.lock
+    profiles: ["pot"]
+    restart: unless-stopped
+    init: true
+
+  # HTTPS for the app via Cloudflare Tunnel (docs/deployment.md §8).
+  # Enable with:  docker compose --profile tunnel up -d
+  # Create the tunnel in the Cloudflare dashboard, route harmoniq.<your-domain> → http://server:8000,
+  # and put its token in .env as CLOUDFLARE_TUNNEL_TOKEN.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+
+# IPv6 for containers. Many home/mobile ISPs share one IPv4 address between customers (CGNAT) and YouTube
+# often bot-checks those, while the same connection's IPv6 works. With YTDLP_IP_VERSION=auto (default) the
+# server retries over IPv6 when that happens (docs/deployment.md §6).
+# Docker Desktop: works out of the box. Linux: needs Docker 27+ and IPv6 on the host.
+networks:
+  default:
+    enable_ipv6: true

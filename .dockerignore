@@ -1,0 +1,50 @@
+# The image only needs: Dockerfile, requirements.lock and app/. Everything else stays out of the build context
+# (smaller, faster builds, and no secrets or local data baked into the image).
+
+# Local environment and data
+.venv/
+venv/
+tools/
+data/
+
+# Secrets and configuration (.env is passed at runtime via env_file, never copied in)
+.env
+.env.*
+secrets/
+*cookies*.txt
+*.pem
+*.key
+
+# Not needed inside the image
+docs/
+tests/
+scripts/
+README.md
+docker-compose*.yml
+compose*.yml
+.dockerignore
+.gitignore
+
+# Caches, logs, stray media
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.log
+*.part
+*.m4a
+*.opus
+*.mp3
+*.webm
+
+# VCS, editors, OS
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,29 @@
+[project]
+name = "harmoniq-server"
+version = "0.1.0"
+description = "Personal backend for Harmoniq: YouTube search, preview info and tagged audio downloads"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    "cachetools>=5.5",
+    "ytmusicapi>=1.8",
+    "mutagen>=1.47",
+    "pillow>=11.0",
+    # yt-dlp is installed separately (see scripts/update-ytdlp.*) so it can be updated
+    # without touching the other pins; "yt-dlp[default]" also brings the pinned yt-dlp-ejs.
+    "bgutil-ytdlp-pot-provider>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytaglib>=3.0"]  # pytaglib: read tags back with TagLib, like the app
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: hits YouTube for real (run with -m live)"]
+addopts = "-m 'not live'"
