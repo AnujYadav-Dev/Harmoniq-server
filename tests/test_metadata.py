@@ -230,17 +230,17 @@ def test_musicbrainz_no_match_returns_nothing():
 
 
 def test_normalize_lrc_for_harmoniq():
-    raw = "[ar:Daft Punk]\n[ti:Get Lucky]\n[length:06:10]\n\n[00:12.34]Like the legend\n[01:05.5][02:10.00]Chorus\n"
-    assert normalize_lrc(raw) == "[00:12.340]Like the legend\n[01:05.500]Chorus\n[02:10.000]Chorus"
+    raw = "[ar:Daft Punk]\n[ti:Get Lucky]\n[length:06:10]\n\n[00:12.34]Paper lanterns\n[01:05.5][02:10.00]Chorus\n"
+    assert normalize_lrc(raw) == "[00:12.340]Paper lanterns\n[01:05.500]Chorus\n[02:10.000]Chorus"
 
 
 def test_lyrics_prefers_synced_ytmusic():
     line = lambda t, ms: types.SimpleNamespace(text=t, start_time=ms)  # noqa: E731
     music = FakeMusic({}, lyrics={"hasTimestamps": True, "source": "Source: LyricFind",
-                                  "lyrics": [line("♪", 0), line("Like the legend", 12340)]})
+                                  "lyrics": [line("♪", 0), line("Paper lanterns", 12340)]})
     md = LyricsProvider(music, FakeHttp({}), ["ytmusic", "lrclib"]).enrich(
         MetadataContext(video_id="v"), TrackMetadata(title="T", artists=["A"], extras={"lyrics_id": "MPLYt"}))
-    assert md.lyrics == "[00:00.000]♪\n[00:12.340]Like the legend"
+    assert md.lyrics == "[00:00.000]♪\n[00:12.340]Paper lanterns"
     assert md.lyrics_synced and md.lyrics_source == "YouTube Music (LyricFind)"
 
 

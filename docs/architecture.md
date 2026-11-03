@@ -109,7 +109,7 @@ how it can grow later. The reasons behind each dependency are in [research.md](r
 
 ---
 
-## 4. Folder layout (planned)
+## 4. Folder layout
 
 Everything lives inside `Harmoniq-server/`. Git-ignored folders are marked ✗.
 

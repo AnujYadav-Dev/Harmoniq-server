@@ -34,7 +34,7 @@ SOURCES = {  # what YouTube serves: AAC in .m4a (itag 140) and Opus in .webm (it
     "aac": ("source.m4a", ["-c:a", "aac", "-b:a", "128k"]),
     "opus": ("source.webm", ["-c:a", "libopus", "-b:a", "128k"]),
 }
-LRC = "[00:00.000]♪\n[00:12.340]Like the legend of the phoenix\n[00:16.500]All ends with beginnings"
+LRC = "[00:00.000]♪\n[00:12.340]Paper lanterns drifting down the river\n[00:16.500]Every light a wish we never said"
 
 FULL = TrackMetadata(
     title="Get Lucky (feat. Pharrell Williams and Nile Rodgers)",
@@ -123,6 +123,16 @@ def test_quality_report_and_silence_rejection(tmp_path):
     with pytest.raises(AppError) as exc:
         quality.validate(FFMPEG, FFPROBE, good, "m4a", 60)
     assert "truncated" in exc.value.detail
+
+
+def test_quality_check_handles_non_latin_tags(tmp_path):
+    """FFmpeg prints the file's UTF-8 tags to stderr; on Windows the default cp1252 decoding used to crash the
+    reader thread, so the silence check was skipped without any error."""
+    dst = convert(tmp_path, "opus", "opus")
+    md = TrackMetadata(title="चाँद आ चल के तुझे", artists=["तलत महमूद"], lyrics="[00:01.000]चाँद तारे ♪ 夜空")
+    write_tags(dst, "opus", md, None, video_id="abcdefghijk", encoder="t")
+    report = quality.validate(FFMPEG, FFPROBE, dst, "opus", 5)
+    assert report["max_volume_db"] is not None  # loudness was actually measured
 
 
 def test_ffmpeg_failure_is_processing_failed(tmp_path):

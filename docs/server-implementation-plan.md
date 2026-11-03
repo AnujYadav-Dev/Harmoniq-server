@@ -74,8 +74,9 @@ Harmoniq parses files with **TagLib 2.x** (`:metaphony` module, `AudioMetadataPa
 
 > ⚠️ **App bug found:** `AudioMetadataParser.parseDate` tries `LocalDate.parse("2013", "yyyy")`, which always throws,
 > so a **year-only** `DATE` becomes *no year at all*. The server writes a full date whenever MusicBrainz knows it,
-> which it does for most albums. The Android fix (parse `Year` / `YearMonth` too) is listed in the
-> [Android plan §8](android-integration-plan.md#8-metadata-handling).
+> which it does for most albums. The Android fix (parse `Year` / `YearMonth` too) from the
+> [Android plan §8](android-integration-plan.md#8-metadata-handling) is now implemented in `:metaphony`
+> (`AudioMetadataDates.kt`).
 
 Extra tags written for other players and for the future (Harmoniq ignores them): `ARTISTS` (one value per
 artist), `ISRC`, `COMMENT`, `ENCODEDBY`, `ITUNESADVISORY` (explicit), `HARMONIQ_SOURCE` (`youtube:<id>`), and

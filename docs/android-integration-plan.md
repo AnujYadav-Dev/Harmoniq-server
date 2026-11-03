@@ -2,8 +2,11 @@
 
 [← Docs index](README.md) · Companion document: [Server Implementation Plan](server-implementation-plan.md)
 
-> Status: **plan**, ready to implement in the next session. The server side (v0.2.0) is done and tested. Nothing in
-> the Android app has been changed yet. Code snippets are illustrative and sized to show the shape of each piece.
+> Status (2026-11-03): **implemented** in the app (Harmoniq 1.3.0 source, staged on the `dev` branch, not yet
+> committed). JVM unit tests pass; device tests, signed `canary`/`release` builds and most of the §16 matrix are
+> still open. What differs from this plan and what is unverified: [§17](#17-implementation-status-and-deviations).
+> The plan text below is kept as the design record; code snippets are illustrative. App-side setup and
+> troubleshooting: the app's `docs/09-global-search-server.md`. Server setup: [deployment-guide.md](deployment-guide.md).
 
 ---
 
@@ -39,21 +42,28 @@
 
 ```text
 ui/view/SearchTabContent.kt ──┐               (Compose; existing tab, new "Global" mode)
+ui/view/settings/GlobalSearchSettingsView.kt   (format, .lrc, folder hint, server status)
 ui/view/globalsearch/         │
   GlobalSearchResults.kt      │  state: StateFlow
   GlobalPreviewSheet.kt ──────┤
-  DownloadsSheet.kt           │
+  GlobalDownloadControls.kt   │  download button, progress, format picker
+  YouTubePreviewPlayer.kt     │
+  LibraryLinkPrompt.kt        │
                               ▼
-services/globalsearch/  (new; created by Symphony like groove/radio)
-  GlobalSearch.kt            facade: search(), track(), preview(), enqueueDownload(), downloads StateFlow
-  ServerConfig.kt            base URL, app token, enabled flag (BuildConfig)
-  DeviceId.kt                random UUID per install (settings entry), sent as X-Device-Id
+services/globalsearch/  (new; GlobalSearch is created by Symphony like groove/radio)
+  GlobalSearch.kt            facade: search(), meta, enqueueDownload(), downloads, library prompt, rescans
+  GlobalSearchServices.kt    builds the API client from a plain Context (UI and worker); "revoked" flag
+  GlobalSearchMessages.kt    error code → user message
+  ServerConfig.kt            base URL, app token, enabled flag (BuildConfig) + timeouts and limits
+  DeviceId.kt                random UUID per install (SharedPreferences "global_search"), sent as X-Device-Id
   api/HarmoniqServerApi.kt   OkHttp calls + error mapping (problem+json → ServerError)
-  api/Dto.kt                 @Serializable models mirroring docs/api.md (ignoreUnknownKeys = true)
-  download/ServerDownloadWorker.kt   WorkManager CoroutineWorker: submit → poll → fetch → verify → save → scan
+  api/Dto.kt, ServerError.kt @Serializable models mirroring docs/api.md (ignoreUnknownKeys = true); error codes
+  download/ServerDownloadWorker.kt   WorkManager CoroutineWorker that runs DownloadPipeline
+  download/DownloadPipeline.kt  submit → poll → fetch → verify → save
   download/DownloadSaver.kt  MediaStore (API 29+) / legacy file (API 28) writer for Download/Harmoniq
-  download/LibraryLink.kt    "is Download/Harmoniq covered by a media folder?" + prompt + rescan
+  download/LibraryLink.kt    "is Download/Harmoniq covered by a media folder?"
   download/DownloadRecords.kt  small persisted list (SharedPreferences JSON) for the UI and dedupe
+  download/DownloadNotifications.kt, DownloadErrorPolicy.kt, DownloadProgressData.kt, FileNames.kt
 ```
 
 Design rules:
@@ -69,21 +79,25 @@ Design rules:
 
 | Value | Where it comes from | Notes |
 |-------|--------------------|-------|
-| `HARMONIQ_SERVER_URL` | `local.properties` or env var → `buildConfigField` | Different per variant: `debug` → your PC/LAN, `canary` → the test server, `release` → production tunnel URL |
-| `HARMONIQ_APP_TOKEN` | same (never committed, like the `SIGNING_*` secrets) | Must match the server's `APP_TOKENS`. Rotating it cuts off old APKs |
-| `GLOBAL_SEARCH_ENABLED` | derived: both values present | Hides the switch otherwise |
+| `HARMONIQ_SERVER_URL` | env var or `local.properties` → `buildConfigField` | Per build type via `HARMONIQ_SERVER_URL_<BUILDTYPE>`, e.g. `_DEBUG` → your PC, `_CANARY`/`_RELEASE` → the tunnel URL |
+| `HARMONIQ_APP_TOKEN` | same (never committed, like the `SIGNING_*` secrets) | The secret part of one `APP_TOKENS` entry. Rotating it cuts off old APKs |
+| enabled | derived in `ServerConfig.isEnabled`: the URL parses and the token is non-empty | Hides the Library/Global switch and the settings entry otherwise |
+
+As implemented in `app/build.gradle.kts`:
 
 ```kotlin
-// app/build.gradle.kts (sketch)
-val props = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load) }
-fun secret(name: String) = System.getenv(name) ?: props.getProperty(name) ?: ""
-defaultConfig {
-    buildConfigField("String", "HARMONIQ_SERVER_URL", "\"${secret("HARMONIQ_SERVER_URL")}\"")
-    buildConfigField("String", "HARMONIQ_APP_TOKEN", "\"${secret("HARMONIQ_APP_TOKEN")}\"")
+fun secret(name: String): String = System.getenv(name) ?: localProperties.getProperty(name) ?: ""
+fun buildTypeSecret(name: String, buildType: String): String =
+    secret("${name}_${buildType.uppercase()}").ifEmpty { secret(name) }
+
+buildTypes.configureEach {
+    listOf("HARMONIQ_SERVER_URL", "HARMONIQ_APP_TOKEN").forEach { key ->
+        buildConfigField("String", key, buildConfigString(buildTypeSecret(key, name)))
+    }
 }
 ```
 
-Add these keys to `docs/06-configuration-and-secrets.md` in the app repo when implementing.
+The keys are documented in the app's `docs/06-configuration-and-secrets.md` and `docs/09-global-search-server.md`.
 
 ## 5. API endpoints used
 
@@ -155,7 +169,7 @@ and how Harmoniq uses it:
 | `DISCNUMBER` | `1/1` | disc number |
 | `DATE` | `2013-05-17` | date + year |
 | `GENRE` | `Electronic; Disco; Funk` | genres (split on `;`) |
-| `LYRICS` | `[00:30.000]Like the legend of the phoenix…` | lyrics cache → synced lyrics view |
+| `LYRICS` | `[00:30.000]First lyric line…` | lyrics cache → synced lyrics view |
 | picture | 1200×1200 JPEG front cover | artwork cache |
 | `ISRC`, `ARTISTS`, `COMMENT`, `HARMONIQ_SOURCE`, MusicBrainz IDs | – | not read today (available for future features) |
 
@@ -302,7 +316,7 @@ Harmoniq only scans the folders in **Settings → Groove → Media folders** (SA
 | `FOREGROUND_SERVICE_DATA_SYNC` + WorkManager's `SystemForegroundService` with `foregroundServiceType="dataSync"` | Long downloads as foreground work on Android 14 (target 34) | Merge into the manifest: `<service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge"/>` |
 | `WRITE_EXTERNAL_STORAGE` with `android:maxSdkVersion="28"` | Writing to `Download/` on Android 9 only | Runtime request on API 28 before the first download |
 | No `READ_MEDIA_AUDIO` / `MANAGE_EXTERNAL_STORAGE` | The library reads through SAF grants; writing uses MediaStore | Keeps the app's storage model unchanged |
-| Network security | HTTPS only for real servers | `debug` build only: a `network_security_config` allowing cleartext to your LAN IP for local testing |
+| Network security | HTTPS only for real servers | `debug` build only (`app/src/debug/`): a `network_security_config` with `<base-config cleartextTrafficPermitted="true" />`, so `127.0.0.1` (adb reverse), `10.0.2.2` (emulator) and any LAN IP work. `release`/`nightly`/`canary` keep Android's default (no cleartext since API 28) |
 | New dependencies | `androidx.work:work-runtime-ktx`, `com.pierfrancescosoffritti.androidyoutubeplayer:core` | Add to `gradle/libs.versions.toml`; add R8 keep rules if the release build needs them (test the release build, as `docs/08-troubleshooting.md` warns) |
 
 ## 14. Testing strategy (Android)
@@ -320,6 +334,7 @@ Harmoniq only scans the folders in **Settings → Groove → Media folders** (SA
 ## 15. Server deployment process
 
 1. **Local (development):** run the server on your PC (`scripts\run.ps1`). The `debug` build points at
+   `http://127.0.0.1:8000` with `adb reverse tcp:8000 tcp:8000`, `http://10.0.2.2:8000` on an emulator, or
    `http://<pc-lan-ip>:8000` (cleartext allowed in debug only). Use the curl walkthrough to confirm the server first.
 2. **Test server:** pick the host ([deployment.md §2](deployment.md#2-where-to-host-it): a home machine is best).
    Run `docker compose up -d`, plus the Cloudflare Tunnel profile for a stable HTTPS name
@@ -329,6 +344,8 @@ Harmoniq only scans the folders in **Settings → Groove → Media folders** (SA
    into the `canary`/`release` build's local properties.
 4. **Keep it healthy:** weekly yt-dlp update ([deployment.md §7](deployment.md#7-keeping-yt-dlp-current)); watch
    `status.youtube` in `/v1/meta`.
+
+The full first-time walkthrough of steps 2–4 is [deployment-guide.md](deployment-guide.md).
 
 ## 16. Validating the complete flow before testers get it
 
@@ -357,14 +374,41 @@ Harmoniq only scans the folders in **Settings → Groove → Media folders** (SA
 | Not in library yet | fresh install | One-time folder prompt; song appears after granting |
 | Android 9 | emulator API 28 | Legacy storage path + permission prompt |
 
-## 17. Implementation checklist (next session)
+## 17. Implementation status and deviations
 
-1. Gradle: WorkManager, android-youtube-player, `buildConfigField`s, secrets docs.
-2. `services/globalsearch`: `ServerConfig`, `DeviceId`, DTOs, `HarmoniqServerApi` (+ unit tests with MockWebServer).
-3. Search tab: Library/Global switch, global results list, error/empty states.
-4. Preview sheet: `/track` + `/preview` + YouTube player; pause `Radio` while previewing.
-5. `ServerDownloadWorker`, `DownloadSaver` (API 28 / 29+), `DownloadRecords`, notifications.
-6. `LibraryLink`: coverage check, one-time folder prompt, rescan.
-7. App fixes: `parseDate` (year / year-month), `TimedContent` fraction scaling.
-8. Settings: download format, "also save .lrc", server status row.
-9. Tests (§14), then the stage gates (§16).
+**Done** (every item of the original checklist): Gradle config and dependencies, `services/globalsearch` with unit
+tests, the Library/Global switch, the preview sheet with the YouTube player (pauses `Radio`),
+`ServerDownloadWorker` + `DownloadSaver` (API 28 / 29+) + `DownloadRecords` + notifications, the `LibraryLink`
+prompt and rescans, both app fixes (`AudioMetadataDates` in `:metaphony` for year / year-month dates,
+`TimedContent` fraction scaling), and the Global search settings screen.
+
+**Deviations from the plan**
+
+| Plan | Implemented | Why |
+|------|-------------|-----|
+| WorkManager (latest) | `androidx.work` **2.10.5** (`gradle/libs.versions.toml`) | 2.11+ pulls in Room 2.7.0; the app is on Room 2.6.1 |
+| android-youtube-player 12.1.x | **13.1.0** | Current release |
+| — | Lint check `NullSafeMutableLiveData` **disabled** (`lint {}` in `app/build.gradle.kts`) | The check shipped with lifecycle 2.9.x (pulled in by the player) crashes AGP 8.7.3's lint. The app has no LiveData. Remove after an AGP upgrade |
+| Worker reaches the app through `Symphony` | The worker builds its API client from a plain `Context` (`GlobalSearchServices`, `DeviceId`, `GlobalSearchPreferences`) | WorkManager runs the worker without the UI-scoped `Symphony` ViewModel |
+| Rescan after each save | `groove.fetch(Groove.FetchOptions())`, serialized by a mutex, **not** `refreshLibrary()` | `refreshLibrary()` calls `radio.stop()`, which would stop playback whenever a download finishes |
+| One key per variant | Build-type keys (`HARMONIQ_SERVER_URL_CANARY` etc.) override the shared key | One `local.properties` serves debug (local PC) and canary/release (tunnel) |
+| `unauthorized` → hide Global until next update | A flag keyed to `versionCode`: after a `401`, Global Search is hidden from the next launch until an APK with a **different `versionCode`** is installed | Token rotation therefore needs a `versionCode` bump ([deployment-guide.md §11](deployment-guide.md#11-rotating-the-app-token)) |
+
+**Verified:** `:app:testDebugUnitTest` (82 tests: DTO parsing against server fixtures, API client with
+MockWebServer, pipeline, worker under Robolectric, file names, library coverage, records, LRC timing) and
+`:metaphony:testDebugUnitTest` (date parsing) pass.
+
+**Not verified yet**
+
+- Device tests on API 28 (legacy storage + permission prompt) and API 34, i.e. the §14 "Storage", "Library" and
+  "UI" rows.
+- Signed `canary` and `release` builds (R8 with kotlinx.serialization and the YouTube player; no new keep rules
+  were added).
+- The §16 matrix against the deployed HTTPS server.
+
+**Follow-ups**
+
+1. Commit the app changes (staged on `dev`) and the server docs.
+2. After an AGP upgrade: move WorkManager to 2.11+ together with Room 2.7, and drop the lint exception.
+3. Later: single-file scan instead of a full `fetch()`; read `HARMONIQ_SOURCE` for a reinstall-proof "Downloaded"
+   badge (§8).

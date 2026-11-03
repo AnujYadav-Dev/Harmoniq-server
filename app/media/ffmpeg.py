@@ -19,6 +19,9 @@ OUTPUTS = {
 }
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# FFmpeg/ffprobe print the file's tags (UTF-8) to stderr. Without an explicit encoding Python decodes with the
+# locale codepage (cp1252 on Windows), which crashes on non-Latin titles/lyrics and loses the whole output.
+TEXT_UTF8 = {"text": True, "encoding": "utf-8", "errors": "replace"}
 
 
 def build_command(ffmpeg: str, src: Path, dst: Path, fmt: str, source_codec: str | None,
@@ -76,7 +79,7 @@ def probe(ffprobe: str, path: Path) -> dict:
         [ffprobe, "-v", "error", "-show_entries",
          "format=duration,bit_rate:stream=codec_type,codec_name,sample_rate,channels",
          "-of", "json", str(path)],
-        capture_output=True, text=True, timeout=60, creationflags=_NO_WINDOW,
+        capture_output=True, timeout=60, creationflags=_NO_WINDOW, **TEXT_UTF8,
     )
     if out.returncode != 0:
         raise AppError("processing_failed", f"ffprobe failed: {out.stderr.strip()[-300:]}")
@@ -97,7 +100,7 @@ def tool_version(binary: str | None, args: tuple[str, ...] = ("-version",)) -> s
     if not binary:
         return None
     try:
-        out = subprocess.run([binary, *args], capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW)
+        out = subprocess.run([binary, *args], capture_output=True, timeout=15, creationflags=_NO_WINDOW, **TEXT_UTF8)
     except OSError:
         return None
     first = (out.stdout or out.stderr).splitlines()[:1]

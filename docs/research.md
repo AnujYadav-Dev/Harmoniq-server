@@ -255,7 +255,7 @@ Never upscale. Transcoding 128 kbps AAC to "320 kbps MP3" only makes the file bi
 | yt-dlp | 2026.10.26 (stable) | Requires Python ≥ 3.11 and a JS runtime for YouTube |
 | ytmusicapi | 1.x (1.8.2–1.11.x reported) | Confirm on PyPI before pinning |
 | pytubefix | 11.1.0 | Fallback only |
-| android-youtube-player | 12.1.x | App side, later |
+| android-youtube-player | 12.1.x | App side. The app now uses 13.1.0 |
 | bgutil-ytdlp-pot-provider | 1.x (PyPI), Rust rewrite 0.8.x | Extractor-arg names differ between implementations. Match the plugin to the sidecar |
 
 ## Sources

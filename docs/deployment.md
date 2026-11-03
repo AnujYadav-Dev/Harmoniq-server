@@ -6,6 +6,10 @@ How to run harmoniq-server: locally from a self-contained Python environment, or
 covers environment variables, YouTube-access hardening, keeping yt-dlp current, how the app reaches the server,
 and keeping it running 24/7.
 
+This is the **reference**. For a first deployment, follow the step-by-step
+[deployment-guide.md](deployment-guide.md) (Docker Compose + Cloudflare Tunnel, verification, connecting the app,
+updates, token rotation, moving machines, troubleshooting).
+
 > Status: **implemented and tested** on Windows, in both local mode and Docker (Docker Desktop): setup, run,
 > live search and downloads in all three formats, restart and cache behaviour.
 
@@ -384,8 +388,12 @@ DNS name gives you that even if the server moves from your PC to a Pi or a VPS l
 - ⚠️ It's a shared secret inside the APK, so a determined tester could extract it (APKs can be decompiled). For a
   handful of trusted testers that's an acceptable risk. The per-device and global rate limits cap the damage if it
   ever leaks.
-- Keep the token out of git on the Android side too (the later app work will read it from `local.properties`/an
-  environment variable at build time, the same way Harmoniq's signing secrets are handled).
+- Keep the token out of git on the Android side too. The app reads `HARMONIQ_SERVER_URL` / `HARMONIQ_APP_TOKEN`
+  (optionally per build type, e.g. `HARMONIQ_SERVER_URL_CANARY`) from environment variables or `local.properties`
+  at build time, the same way its signing secrets are handled. Changing the URL or token therefore means rebuilding
+  and redistributing the APK. Details: the app's `docs/09-global-search-server.md`.
+
+Step-by-step tunnel setup: [deployment-guide.md §6](deployment-guide.md#6-cloudflare-tunnel-with-your-own-domain).
 
 ---
 
@@ -407,9 +415,9 @@ unattended.
 | **Logs** | stdout plus `data/logs/server.log` (rotated, 10 MB × 3). Search by `job_id` / `request_id` |
 | **Is YouTube working?** | `GET /v1/meta` → `status.youtube` and `last_canary_at` |
 | **Add a tester** | Send them the APK. Nothing changes on the server |
-| **Rotate the app token** (leaked, or a tester should lose access) | Add a new `id:secret` to `APP_TOKENS`, restart, build and share an APK with the new token, then remove the old entry and restart again. Old APKs stop working |
+| **Rotate the app token** (leaked, or a tester should lose access) | Add a new `id:secret` to `APP_TOKENS`, restart, build and share an APK with the new token **and a higher `versionCode`**, then remove the old entry and restart again. Old APKs stop working. Step by step: [deployment-guide.md §11](deployment-guide.md#11-rotating-the-app-token) |
 | **Free disk space** | Stop the server and delete `data/files/*`. It's only a cache |
-| **Backups** | None needed. Keep a copy of `.env` and `secrets/` |
+| **Backups** | Only `.env` (app and tunnel tokens). `data/` is a cache; an optional `secrets/cookies.txt` can be exported again |
 | **Restarting** | Safe at any time. Running jobs are lost and the app resubmits them; finished files survive |
 
 ## 11. Checklist before testers use it

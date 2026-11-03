@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from app.domain.errors import AppError
-from app.media.ffmpeg import OUTPUTS, probe
+from app.media.ffmpeg import OUTPUTS, TEXT_UTF8, probe
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _MAX_VOLUME = re.compile(r"max_volume:\s*(-?[\d.]+|-inf)\s*dB")
@@ -22,7 +22,7 @@ DURATION_TOLERANCE = 2.0
 def loudness(ffmpeg: str, path: Path, timeout: float = 180) -> tuple[float | None, float | None]:
     out = subprocess.run([ffmpeg, "-nostdin", "-hide_banner", "-i", str(path), "-map", "0:a:0", "-vn",
                           "-af", "volumedetect", "-f", "null", "-"],
-                         capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW)
+                         capture_output=True, timeout=timeout, creationflags=_NO_WINDOW, **TEXT_UTF8)
     def grab(rx):
         m = rx.search(out.stderr or "")
         if not m:

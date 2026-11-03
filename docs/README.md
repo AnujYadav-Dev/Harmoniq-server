@@ -1,12 +1,14 @@
 # harmoniq-server documentation
 
-**harmoniq-server** is the planned backend that lets the Harmoniq Android music player search YouTube, preview a
+**harmoniq-server** is the backend that lets the Harmoniq Android music player search YouTube, preview a
 result, and save its audio, with full tags and cover art, into the app's music folder.
 
 > **Status (2026-11-03): v0.2.0 implemented.** The server runs locally and in Docker, tested end to end
 > against real YouTube, with full song metadata (album, track number, release date, genres, ISRC, synced
-> lyrics, cover art). The Android app has **not** been changed; integration is the next phase. Quick start:
-> [../README.md](../README.md).
+> lyrics, cover art). The Android app's **Global Search is implemented** against it (staged in the app repo, not yet
+> committed; device and signed-build tests still open, see
+> [android-integration-plan.md §17](android-integration-plan.md#17-implementation-status-and-deviations)).
+> Quick start: [../README.md](../README.md). First deployment: [deployment-guide.md](deployment-guide.md).
 >
 > **Scope:** a **personal project** used by the owner and a few testers who get the APK directly. It isn't
 > public and isn't a service. The design is deliberately small: **one process, no Redis, no database**.
@@ -38,7 +40,7 @@ picks it up.
 | Local run | One folder: `.venv/` (from your installed Python), `tools/` (FFmpeg, Deno), `data/` |
 | Server run | **One Docker container** (`docker compose up -d`), same `.env` |
 | App → server | HTTPS URL + **secret app token** built into the APK; Cloudflare Tunnel recommended for HTTPS |
-| Preview (app side, later) | Official IFrame player via `android-youtube-player` |
+| Preview (app side) | Official IFrame player via `android-youtube-player` 13.1.0 |
 
 The reasoning for each choice is in [research.md §7](research.md#7-recommendation).
 
@@ -50,9 +52,10 @@ The reasoning for each choice is in [research.md §7](research.md#7-recommendati
 | 2 | [architecture.md](architecture.md) | The single-process design, folder layout, data flow, job state machine, file lifecycle, what happens on restart, extension roadmap |
 | 3 | [api.md](api.md) | Every endpoint with request/response JSON, error codes, headers, and a curl walkthrough |
 | 4 | [download-flow.md](download-flow.md) | Step-by-step search → preview → download → FFmpeg → tagging → delivery, with exact yt-dlp/FFmpeg settings, retries and failure handling |
-| 5 | [deployment.md](deployment.md) | Local mode (one folder, Python venv) and server mode (Docker), env vars, YouTube-access tips, updating yt-dlp, how the app reaches the server, running 24/7 |
+| 5 | [deployment.md](deployment.md) | Reference: local mode (one folder, Python venv) and server mode (Docker), env vars, YouTube-access tips, updating yt-dlp, how the app reaches the server, running 24/7 |
+| 5a | [deployment-guide.md](deployment-guide.md) | **Step-by-step first deployment** with Docker Compose + Cloudflare Tunnel: verify, connect the app, update, rotate tokens, move machines, troubleshoot, remaining work |
 | 6 | [server-implementation-plan.md](server-implementation-plan.md) | **Metadata & quality plan (v0.2.0)**: what the old notebook stored, what Harmoniq reads, providers, tag mapping, API changes |
-| 7 | [android-integration-plan.md](android-integration-plan.md) | **Android integration**: Global Search, preview, download, saving to `Download/Harmoniq`, library detection, testing, rollout |
+| 7 | [android-integration-plan.md](android-integration-plan.md) | **Android integration** (implemented): Global Search, preview, download, saving to `Download/Harmoniq`, library detection, testing, rollout, deviations from the plan |
 
 How they fit together:
 
@@ -60,9 +63,10 @@ How they fit together:
 research.md ──(decides dependencies)──▶ architecture.md ──(defines components)──┬──▶ api.md            (contract)
                                                                                ├──▶ download-flow.md  (behaviour)
                                                                                └──▶ deployment.md     (operations)
+                                                                                      └──▶ deployment-guide.md (first deployment, step by step)
 ```
 
-## Things to know before implementing
+## Things to know
 
 1. **Personal use only.** Testers get the APK from you; the server only accepts requests carrying the app's secret
    token, over HTTPS, and the URL is never published. The download feature stays out of any Google Play build
@@ -78,11 +82,14 @@ research.md ──(decides dependencies)──▶ architecture.md ──(defines
 6. **Licence.** Harmoniq is AGPL-3.0. The server should be AGPL-3.0 too, which is compatible with the
    GPL-licensed dependencies (mutagen, the PO-token plugin).
 
-## Next steps (implementation phase)
+## Next steps
 
-1. Scaffold the folder layout from [architecture.md §4](architecture.md#4-folder-layout-planned):
-   `pyproject.toml`, `.env.example`, the setup/run scripts, Dockerfile and compose file.
-2. Implement the providers (search → metadata → download) with recorded-fixture contract tests.
-3. Implement the job manager, pipeline, file store and sweeper.
-4. Ship `/v1` exactly as in [api.md](api.md).
-5. Run it at home, test it with the testers, then start the Android integration as its own phase.
+The server and the app integration are implemented. What's left is deployment and testing:
+
+1. Deploy the server with a stable HTTPS URL: [deployment-guide.md](deployment-guide.md) (§16 lists the steps in
+   order).
+2. Build a signed `canary` APK against it and run the test matrix in
+   [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it),
+   including Android 9 (API 28) and Android 14 (API 34) devices.
+3. Commit both repositories and add a `LICENSE` file (AGPL-3.0-or-later) to this one.
+4. Remaining work is tracked in [deployment-guide.md §16](deployment-guide.md#16-next-steps--remaining-work).

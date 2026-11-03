@@ -43,6 +43,12 @@ docker compose up -d --build
 Optional profiles: `--profile tunnel` (Cloudflare Tunnel for HTTPS) and `--profile pot` (PO-token provider if
 YouTube starts bot-checking the server).
 
+Deploying it for the app for the first time (host choice, Docker, `.env`, Cloudflare Tunnel, verification,
+updates, token rotation): follow [docs/deployment-guide.md](docs/deployment-guide.md).
+
+The Harmoniq app's Global Search uses this server. The app reads the server URL and token at build time; see the
+app's `docs/09-global-search-server.md`.
+
 ## Keeping it working
 
 YouTube changes often. When downloads start failing, update yt-dlp first:
@@ -74,7 +80,9 @@ That runs the offline suite: unit tests, API tests with fake YouTube providers, 
 | [docs/api.md](docs/api.md) | Endpoints, JSON, error codes |
 | [docs/architecture.md](docs/architecture.md) | Design, code layout, job lifecycle |
 | [docs/download-flow.md](docs/download-flow.md) | Search → preview → download → FFmpeg → tags |
-| [docs/deployment.md](docs/deployment.md) | Local/Docker setup, env vars, HTTPS for the app, 24/7 |
+| [docs/deployment-guide.md](docs/deployment-guide.md) | Step-by-step first deployment: Docker + Cloudflare Tunnel, verify, update, rotate, move, troubleshoot |
+| [docs/deployment.md](docs/deployment.md) | Reference: local/Docker setup, env vars, HTTPS for the app, 24/7 |
+| [docs/android-integration-plan.md](docs/android-integration-plan.md) | Global Search in the app: design, status, deviations |
 | [docs/research.md](docs/research.md) | Library research and why this stack |
 
-Licence: AGPL-3.0-or-later, like Harmoniq.
+Licence: AGPL-3.0-or-later, like Harmoniq (declared in `pyproject.toml`; the repository has no `LICENSE` file yet).
