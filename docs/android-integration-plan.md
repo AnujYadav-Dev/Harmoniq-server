@@ -6,7 +6,7 @@
 > committed). JVM unit tests pass; device tests, signed `canary`/`release` builds and most of the §16 matrix are
 > still open. What differs from this plan and what is unverified: [§17](#17-implementation-status-and-deviations).
 > The plan text below is kept as the design record; code snippets are illustrative. App-side setup and
-> troubleshooting: the app's `docs/09-global-search-server.md`. Server setup: [deployment-guide.md](deployment-guide.md).
+> troubleshooting: the app's [docs/09-global-search-server.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md). Server setup: [deployment-guide.md](deployment-guide.md).
 
 ---
 
@@ -97,7 +97,7 @@ buildTypes.configureEach {
 }
 ```
 
-The keys are documented in the app's `docs/06-configuration-and-secrets.md` and `docs/09-global-search-server.md`.
+The keys are documented in the app's [docs/06-configuration-and-secrets.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/06-configuration-and-secrets.md) and [docs/09-global-search-server.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md).
 
 ## 5. API endpoints used
 
@@ -356,7 +356,7 @@ The full first-time walkthrough of steps 2–4 is [deployment-guide.md](deployme
 | 1. Dev | you | `debug` | local PC | All rows of the test matrix below pass on one device |
 | 2. Internal | you, 2+ devices (one Android 9 or emulator, one Android 14) | `canary` | test server via HTTPS tunnel | Matrix passes on both; 24 h canary green on the server |
 | 3. Testers | the few testers | `canary` APK shared directly | same | No blocking issues for a week; collect feedback |
-| 4. Release | everyone you share with | `release` | same (production token) | Pre-release checklist in the app's `docs/05-release-and-distribution.md` |
+| 4. Release | everyone you share with | `release` | same (production token) | Pre-release checklist in the app's [docs/05-release-and-distribution.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/05-release-and-distribution.md) |
 
 **Test matrix** (each one: search → preview → download → appears in library with correct tags)
 

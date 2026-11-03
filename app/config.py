@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     yt_min_interval_seconds: float = 2.0
     search_timeout_seconds: float = 10.0
     metadata_timeout_seconds: float = 20.0
+    max_playlist_tracks: int = 200
+    search_all_section_limit: int = 10
 
     # Caching and storage
     search_cache_ttl: int = 21600

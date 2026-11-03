@@ -40,7 +40,7 @@ Why: the hard part of this server isn't CPU, it's YouTube accepting the machine'
 1 GB RAM for the server, ~5 GB free disk (plus about 1.1 GB for the image).
 
 Because the app reaches the server through a **Cloudflare Tunnel hostname**, you can move the server to another
-machine later without changing the URL baked into the APKs (§12).
+machine later without even editing the app's config file (§12).
 
 ## 2. Prerequisites
 
@@ -296,21 +296,28 @@ copy. If the status ends as `failed`, run `curl -fsS "$BASE/v1/downloads/$JOB" -
 
 ## 9. Connect the Android build
 
-The server URL and token are **build-time values**: they are compiled into the APK. In the Harmoniq app checkout,
-add them to `local.properties` (git-ignored) for the build types that should use this server:
+The app finds the server **at runtime**, so connecting it needs no rebuild. In the Harmoniq app repository, edit
+[`config/global-search.json`](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/config/global-search.json) on the `main` branch (GitHub's web editor is fine):
 
-```properties
-HARMONIQ_SERVER_URL_CANARY=https://harmoniq.example.com
-HARMONIQ_APP_TOKEN_CANARY=hq_xxx…
-HARMONIQ_SERVER_URL_RELEASE=https://harmoniq.example.com
-HARMONIQ_APP_TOKEN_RELEASE=hq_xxx…
+```json
+{
+  "version": 1,
+  "server_url": "https://harmoniq.example.com",
+  "app_token": "hq_xxx…",
+  "enabled": true,
+  "message": null
+}
 ```
 
-Then build a **signed** canary, install it, and check **Settings → Global search → Server status** shows the server
-version and YouTube status. Every key, local testing (`adb reverse`, `10.0.2.2`, LAN IP), and the app-side
+`app_token` is the part after the colon of one `APP_TOKENS` entry. Every installed app using the default
+"Harmoniq server" picks it up within minutes. **That file is public**, so this token is a public app key: it keeps
+out bots, and the server's rate limits do the rest. For a private server, users choose **Settings → Global search →
+Server → My own server** in the app and enter the URL and token there (stored encrypted on the phone).
+
+Then open **Settings → Global search** in the app: *Connection* should say "From Harmoniq's GitHub", and *Server
+status* should show the server version and YouTube status. Every key, local testing (`adb reverse`, `10.0.2.2`, LAN IP), and the app-side
 troubleshooting are in the app docs:
-[docs/09-global-search-server.md](../../docs/09-global-search-server.md) (path relative to the Harmoniq-stack folder,
-where the app docs live next to this repository).
+[docs/09-global-search-server.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md) in the Harmoniq repository.
 
 ## 10. Updating
 
@@ -371,14 +378,13 @@ Do this when a token leaks or someone should lose access. Old APKs stop working 
    ```
    Recreates the server container with the new environment. Both tokens are accepted now.
 
-3. In the app, put the new token into `local.properties`, **bump `versionCode`** in `app/build.gradle.kts`, build and
-   distribute the new APK. The `versionCode` bump matters: after an install receives a `401`, the app hides Global
-   Search for that `versionCode` until a different version is installed (see the app's
-   [docs/09](../../docs/09-global-search-server.md)).
-4. When testers have updated, remove the old entry (`APP_TOKENS=app-v2:hq_new…`) and repeat step 2.
+3. Put the new token into `app_token` in the app repository's
+   [`config/global-search.json`](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/config/global-search.json) and commit. No app rebuild is needed.
+4. A day later, remove the old entry (`APP_TOKENS=app-v2:hq_new…`) and repeat step 2.
 
-Old APKs then get `401 unauthorized`; the app shows *"This app version can't use Global Search anymore. Please
-update."* and hides Global Search from the next launch.
+A phone that still has the old token gets one `401`, re-reads the config file and continues with the new token; a
+download in progress retries instead of failing. Users of **My own server** update the token in the app's
+Settings. (Details: the app's [docs/09](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md#changing-or-updating-the-server-url-or-token).)
 
 If the **tunnel token** leaked, refresh it as well: **Networking → Tunnels →** your tunnel **→ Overview → Refresh
 token**, put the new token into `.env`, and recreate the tunnel with
@@ -387,7 +393,8 @@ token**, put the new token into `.env`, and recreate the tunnel with
 
 ## 12. Moving to a new machine (same URL)
 
-The URL belongs to the tunnel, not to the machine, so APKs keep working.
+The URL belongs to the tunnel, not to the machine, so the app's `config/global-search.json` doesn't need to change.
+(Moving to a **different** URL instead? Just update `server_url` in that file, see §9.)
 
 1. On the new machine: install Docker (§3), clone (§4.1), and copy the old **`.env`** over (it holds `APP_TOKENS`
    and `CLOUDFLARE_TUNNEL_TOKEN`). On Linux check `HARMONIQ_UID`/`HARMONIQ_GID`. `data/` doesn't need copying: it's
@@ -420,7 +427,8 @@ an optional `secrets/cookies.txt` can be exported again.
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `401 unauthorized` with curl | Wrong token, the `id:` part included, or quotes/spaces copied | Send only the part after the colon. Check the server log line `APP_TOKENS is empty` |
-| App says *"This app version can't use Global Search anymore"* | The APK's token isn't in `APP_TOKENS` (rotated, or built with another token) | Rebuild with the current token **and** a higher `versionCode` (§11) |
+| App says *"The server didn't accept the access key"* | The token in `config/global-search.json` (or the user's own-server token) isn't in `APP_TOKENS` | Fix `app_token` in the config file, or add that token to `APP_TOKENS` (§11) |
+| App says *"Global Search is paused right now"* | `"enabled": false` in `config/global-search.json` | Set it back to `true` |
 | `curl` can't resolve or connect to the hostname | DNS not active yet, or no route | Cloudflare dashboard: domain active? Route under the tunnel's **Routes** tab? |
 | A Cloudflare error page instead of JSON | Tunnel down, or Service URL wrong | `docker compose ps` (is `tunnel` running?), `docker compose logs tunnel`; Service URL must be `http://server:8000` |
 | Tunnel shows **Down** / **Inactive** | Container stopped, token wrong or refreshed, machine offline | `docker compose --profile tunnel up -d`; recheck `CLOUDFLARE_TUNNEL_TOKEN` |

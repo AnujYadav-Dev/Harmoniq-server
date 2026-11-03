@@ -62,6 +62,7 @@ class Services:
     metadata_cache: TTLCache | None = None
     info_cache: TTLCache | None = None  # raw yt-dlp info dicts, shared by /videos and /track
     track_cache: TTLCache | None = None
+    playlist_cache: TTLCache | None = None
     versions: dict = field(default_factory=dict)
 
     @classmethod
@@ -82,6 +83,7 @@ class Services:
             metadata_cache=TTLCache(maxsize=256, ttl=settings.metadata_cache_ttl),
             info_cache=TTLCache(maxsize=128, ttl=settings.metadata_cache_ttl),
             track_cache=TTLCache(maxsize=256, ttl=settings.metadata_cache_ttl),
+            playlist_cache=TTLCache(maxsize=128, ttl=settings.metadata_cache_ttl),
         )
 
     def close(self) -> None:

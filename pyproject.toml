@@ -1,6 +1,6 @@
 [project]
 name = "harmoniq-server"
-version = "0.1.0"
+version = "0.3.0"
 description = "Personal backend for Harmoniq: YouTube search, preview info and tagged audio downloads"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }

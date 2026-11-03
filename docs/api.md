@@ -11,7 +11,8 @@ document and that schema disagree, the schema wins, and this document should be 
 
 | Method | Path | Purpose | Sync? |
 |--------|------|---------|-------|
-| `GET` | [`/v1/search`](#get-v1search) | Search songs or videos | Sync |
+| `GET` | [`/v1/search`](#get-v1search) | Search songs, videos, playlists, or all three | Sync |
+| `GET` | [`/v1/playlists/{playlist_id}`](#get-v1playlistsplaylist_id) | Playlist info and its tracks | Sync |
 | `GET` | [`/v1/videos/{video_id}`](#get-v1videosvideo_id) | Full metadata for one video | Sync |
 | `GET` | [`/v1/videos/{video_id}/preview`](#get-v1videosvideo_idpreview) | Embed/preview information | Sync |
 | `GET` | [`/v1/videos/{video_id}/track`](#get-v1videosvideo_idtrack) | Resolved song metadata ("Find Music") | Sync |
@@ -95,9 +96,11 @@ machine-readable `code`:
 | 404 | `lyrics_not_available` | No lyrics were found for this song | no | Hide the lyrics option |
 | 404 | `job_not_found` | Unknown or expired job ID, or the server restarted (job records are in memory) | no | Submit the download again (instant if the file was already finished) |
 | 404 | `video_not_found` | ID doesn't exist | no | Remove from list |
+| 404 | `playlist_not_found` | Private, deleted, or a playlist YouTube Music can't open (e.g. some `RD…` mixes) | no | Offer "Open in YouTube" |
 | 409 | `job_not_ready` | `/file` requested before `completed` | yes | Keep polling |
 | 410 | `job_expired` | File already evicted (TTL) | no | `POST` again (often a cache-cold re-download) |
 | 422 | `invalid_video_id` | Malformed ID | no | — |
+| 422 | `invalid_playlist_id` | Malformed playlist ID | no | — |
 | 422 | `invalid_format` | Unsupported `format`/`quality` | no | — |
 | 422 | `invalid_request` | Malformed JSON body, missing field, disallowed `artwork_url` | no | Fix the request |
 | 422 | `video_unavailable` | Private, removed, region-blocked, premium-only | no | Show reason |
@@ -121,13 +124,13 @@ For async jobs, errors don't come back as HTTP errors from the status endpoint. 
 
 ## GET /v1/search
 
-Search YouTube Music songs or YouTube videos.
+Search YouTube Music songs, YouTube videos, YouTube Music playlists, or all three at once.
 
 | Query param | Type | Default | Notes |
 |-------------|------|---------|-------|
 | `q` | string | **required** | 1–200 chars |
-| `type` | `song` \| `video` | `song` | `song` → YouTube Music catalogue (ytmusicapi); `video` → YouTube (yt-dlp) |
-| `limit` | int | `20` | 1–50 |
+| `type` | `song` \| `video` \| `playlist` \| `all` | `song` | `song` → YouTube Music catalogue (ytmusicapi); `video` → YouTube (yt-dlp); `playlist` and `all` since v0.3.0 (check `features.search_types` in [`/v1/meta`](#get-v1meta)) |
+| `limit` | int | `20` (`all`: `SEARCH_ALL_SECTION_LIMIT`, 10) | 1–50; for `all`, per section |
 
 Pagination is intentionally left out of v1. Both upstreams paginate with continuation tokens that expire quickly.
 A `cursor` param is reserved for later.
@@ -170,6 +173,83 @@ curl -s "https://harmoniq.example.com/v1/search?q=daft%20punk%20one%20more%20tim
 For `type=video`, `artists`/`album` are `null` or best-effort, and `channel` (`{name, id, url}`),
 `view_count` and 16:9 `thumbnails` are filled in. If the Music provider fails, the server falls back to video
 search and sets `"source": "youtube"`, so the response shape doesn't change.
+
+**`type=playlist`** (v0.3.0): `results` is `[]` (so older clients never see a new shape) and the hits are in
+`playlists`:
+
+```json
+{
+  "query": "lofi beats", "type": "playlist", "source": "youtube_music", "cached": false, "results": [],
+  "playlists": [
+    {
+      "result_type": "playlist",
+      "playlist_id": "PLVppO9BnnvNXywdH5MdT_nl3sYY12YmeU",
+      "title": "Dark Lofi Type Beats",
+      "author": "warhol avenue.",
+      "item_count": null,
+      "thumbnails": [{ "url": "https://i.ytimg.com/vi/.../hqdefault.jpg", "width": 400, "height": 225 }],
+      "watch_url": "https://music.youtube.com/playlist?list=PLVppO9BnnvNXywdH5MdT_nl3sYY12YmeU"
+    }
+  ]
+}
+```
+
+`playlist_id` is the plain ID (YouTube Music's `VL` browse prefix is removed). `item_count` is often `null`
+(YouTube Music doesn't always say); the playlist endpoint returns the real count.
+
+**`type=all`** (v0.3.0): songs, videos and playlists are fetched **concurrently** and returned in `sections`.
+Each section is cached separately (sharing the cache of the single-type searches). A failing section comes back
+empty and is named in `sections.errors` (section → error `code`); the request fails only when all three fail
+(with the first section's error). It counts once against the per-device search limit and three times against
+the global upstream budget.
+
+```json
+{
+  "query": "daft punk", "type": "all", "source": "mixed", "cached": false, "results": [],
+  "sections": {
+    "songs":     [ { "video_id": "FGBhQbmPwH8", "result_type": "song", "...": "..." } ],
+    "videos":    [ { "video_id": "FGBhQbmPwH8", "result_type": "video", "...": "..." } ],
+    "playlists": [ { "playlist_id": "PL...", "result_type": "playlist", "...": "..." } ],
+    "errors": { }
+  }
+}
+```
+
+For `song` and `video` responses, `playlists` and `sections` are `null`.
+
+---
+
+## GET /v1/playlists/{playlist_id}
+
+Playlist info plus its playable tracks, in the **same shape as search results** (v0.3.0).
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `playlist_id` | path | **required** | `^(VL)?[A-Za-z0-9_-]{10,64}$`; a `VL` prefix is stripped. Anything else → `422 invalid_playlist_id` |
+| `limit` | int | `MAX_PLAYLIST_TRACKS` (200) | 1–`MAX_PLAYLIST_TRACKS` |
+
+```json
+{
+  "playlist_id": "PL0BKTsqcDLNFhlmyCUzRyYEF6ox9PI1z5",
+  "title": "Daft Punk: Best Of",
+  "author": "Daft Punk",
+  "description": null,
+  "track_count": 19,
+  "duration": 5478,
+  "thumbnails": [{ "url": "https://yt3.ggpht.com/...=s576", "width": 576, "height": 576 }],
+  "watch_url": "https://music.youtube.com/playlist?list=PL0BKTsqcDLNFhlmyCUzRyYEF6ox9PI1z5",
+  "tracks": [
+    { "video_id": "qe8Q7mjxjig", "result_type": "song", "title": "Veridis Quo", "...": "..." }
+  ],
+  "truncated": true
+}
+```
+
+- A track's `result_type` is `song` for YouTube Music catalogue audio (`MUSIC_VIDEO_TYPE_ATV`, `watch_url` on
+  `music.youtube.com`), otherwise `video` (`www.youtube.com`).
+- Unavailable entries and entries without a video ID are dropped, so `tracks` can be shorter than `track_count`.
+- `truncated` is `true` when the playlist has more than `limit` tracks.
+- Private, deleted or unopenable playlists → `404 playlist_not_found`. Cached for `METADATA_CACHE_TTL`.
 
 ---
 
@@ -499,20 +579,25 @@ it can save a `.lrc` next to the song if wanted.
 ```json
 {
   "api_version": "1.0.0",
-  "server_version": "0.2.0",
+  "server_version": "0.3.0",
   "formats": ["m4a", "opus", "mp3"],
   "default_format": "m4a",
   "max_duration_seconds": 900,
   "limits": { "search_per_minute": 30, "downloads_per_hour": 60, "max_active_jobs": 3, "max_concurrent_downloads": 2 },
   "features": { "metadata_providers": ["ytmusic", "youtube", "musicbrainz", "lyrics"],
                 "lyrics_providers": ["ytmusic", "lrclib"], "musicbrainz": true, "lastfm": false,
-                "filename_template": "{artist} - {title}" },
+                "filename_template": "{artist} - {title}",
+                "search_types": ["song", "video", "playlist", "all"],
+                "max_playlist_tracks": 200, "search_all_section_limit": 10 },
   "components": { "yt_dlp": "2026.10.26", "yt_dlp_ejs": "0.8.0", "ytmusicapi": "1.12.3",
                   "ffmpeg": "ffmpeg version N-128280-…", "deno": "deno 2.9.8 (…)", "python": "3.13.3" },
   "queue": { "waiting": 0, "active": 1 },
   "status": { "youtube": "ok", "last_canary_at": "2026-11-02T17:00:03Z", "last_canary_ok": true }
 }
 ```
+
+`features.search_types` (v0.3.0) lists the `type` values `/v1/search` accepts. Older servers don't send it;
+clients should then assume `["song", "video"]`.
 
 `status.youtube` is `ok | degraded | blocked`, based on the latest canary and recent job error rates. The app can
 show a banner instead of letting users start downloads that will fail.

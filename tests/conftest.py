@@ -53,10 +53,43 @@ VIDEO_INFO = {
 }
 
 
+PLAYLIST_SEARCH_RESULT = {
+    "category": "Community playlists", "resultType": "playlist", "title": "Lofi Beats", "itemCount": None,
+    "author": "Lofi Girl", "browseId": "VLPLVppO9BnnvNXywdH5MdT_nl3sYY12YmeU",
+    "thumbnails": [{"url": "https://i.ytimg.com/vi/rj7MEQbSPKQ/hqdefault.jpg", "width": 400, "height": 225}],
+}
+
+
+def playlist_track(video_id, video_type="MUSIC_VIDEO_TYPE_ATV", **extra):
+    return {"videoId": video_id, "title": f"Track {video_id}", "artists": [{"name": "Daft Punk", "id": "UC_x"}],
+            "album": {"name": "Discovery", "id": "MPREb_x"}, "isAvailable": True, "isExplicit": False,
+            "videoType": video_type, "duration": "3:02", "duration_seconds": 182,
+            "thumbnails": [{"url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg", "width": 400, "height": 225}],
+            **extra}
+
+
+# shaped like ytmusicapi 1.12 get_playlist()
+PLAYLIST = {
+    "owned": False, "id": "PLVppO9BnnvNXywdH5MdT_nl3sYY12YmeU", "privacy": "PUBLIC", "description": None,
+    "views": 46, "duration": "28 minutes", "trackCount": 4, "title": "Lofi Beats",
+    "thumbnails": [{"url": "https://i.ytimg.com/vi/rj7MEQbSPKQ/hqdefault.jpg", "width": 400, "height": 225}],
+    "author": {"name": "Lofi Girl", "id": "UCn8sXUd_Fm2Ka_Z69cLIuJw"}, "year": "2026", "duration_seconds": 1700,
+    "tracks": [
+        playlist_track("FGBhQbmPwH8"),
+        playlist_track("rj7MEQbSPKQ", "MUSIC_VIDEO_TYPE_UGC", album=None),
+        playlist_track("unavailabl1", isAvailable=False),
+        {**playlist_track("x"), "videoId": None},
+    ],
+}
+
+
 class FakeMusic:
     def __init__(self):
         self.calls = 0
         self.fail = False
+        self.playlist_search_fail = False
+        self.playlist_calls = 0
+        self.playlist_data = PLAYLIST
 
     def search_songs(self, query, limit):
         self.calls += 1
@@ -64,12 +97,28 @@ class FakeMusic:
             raise RuntimeError("ytmusic broke")
         return [MUSIC_RESULT][:limit]
 
+    def search_playlists(self, query, limit):
+        self.calls += 1
+        if self.playlist_search_fail:
+            raise AppError("upstream_error", "playlists broke")
+        # ytmusicapi ignores the limit; the real provider cuts the list
+        return [{**PLAYLIST_SEARCH_RESULT, "title": f"Lofi {i}"} for i in range(20)][:limit]
+
+    def playlist(self, playlist_id, limit):
+        self.playlist_calls += 1
+        if playlist_id == "PLmissing000000":
+            raise KeyError("contents")
+        return self.playlist_data
+
 
 class FakeYtDlp:
     def __init__(self):
         self.extract_calls = 0
+        self.search_fail = False
 
     def search(self, query, limit):
+        if self.search_fail:
+            raise AppError("upstream_blocked", "bot check")
         return [{"id": "FGBhQbmPwH8", "title": "Daft Punk - One More Time", "ie_key": "Youtube", "duration": 320,
                  "channel": "Daft Punk", "view_count": 5}, {"id": "UCabc", "ie_key": "YoutubeTab", "title": "ch"}]
 

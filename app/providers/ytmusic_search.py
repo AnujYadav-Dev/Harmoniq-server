@@ -22,6 +22,16 @@ class YTMusicSearch:
             results = self._yt().search(query, filter="songs", limit=limit)
         return [r for r in results if r.get("videoId")][:limit]
 
+    def search_playlists(self, query: str, limit: int) -> list[dict]:
+        with self._lock:
+            results = self._yt().search(query, filter="playlists", limit=limit)
+        return [r for r in results if r.get("browseId")][:limit]  # ytmusicapi returns ~20 regardless of limit
+
+    def playlist(self, playlist_id: str, limit: int) -> dict:
+        """Playlist info and up to about `limit` tracks. Raises KeyError when YouTube has no such playlist."""
+        with self._lock:
+            return self._yt().get_playlist(playlist_id, limit=limit)
+
     def watch_track(self, video_id: str) -> tuple[dict | None, str | None]:
         """Canonical catalogue entry for a video: (track dict, lyrics browse id)."""
         with self._lock:

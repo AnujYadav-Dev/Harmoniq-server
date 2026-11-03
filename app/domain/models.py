@@ -8,6 +8,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# YouTube Music returns browse ids ("VL" + playlist id); both forms are accepted
+PLAYLIST_ID_RE = re.compile(r"^(VL)?([A-Za-z0-9_-]{10,64})$")
+SEARCH_TYPES = ("song", "video", "playlist", "all")
 
 AudioFormatName = Literal["m4a", "opus", "mp3"]
 JobStatus = Literal[
@@ -54,12 +57,46 @@ class SearchResult(BaseModel):
     watch_url: str
 
 
+class PlaylistResult(BaseModel):
+    result_type: Literal["playlist"] = "playlist"
+    playlist_id: str
+    title: str
+    author: str | None = None
+    item_count: int | None = None
+    thumbnails: list[Thumbnail] = Field(default_factory=list)
+    watch_url: str
+
+
+class SearchSections(BaseModel):
+    """`type=all`: one list per type. A failed section is empty and named in `errors` (section → error code)."""
+
+    songs: list[SearchResult] = Field(default_factory=list)
+    videos: list[SearchResult] = Field(default_factory=list)
+    playlists: list[PlaylistResult] = Field(default_factory=list)
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
 class SearchResponse(BaseModel):
     query: str
-    type: Literal["song", "video"]
-    source: Literal["youtube_music", "youtube"]
+    type: Literal["song", "video", "playlist", "all"]
+    source: Literal["youtube_music", "youtube", "mixed"]
     cached: bool = False
     results: list[SearchResult]
+    playlists: list[PlaylistResult] | None = None
+    sections: SearchSections | None = None
+
+
+class PlaylistDetail(BaseModel):
+    playlist_id: str
+    title: str
+    author: str | None = None
+    description: str | None = None
+    track_count: int | None = None
+    duration: int | None = None
+    thumbnails: list[Thumbnail] = Field(default_factory=list)
+    watch_url: str
+    tracks: list[SearchResult]
+    truncated: bool = False
 
 
 class VideoFlags(BaseModel):

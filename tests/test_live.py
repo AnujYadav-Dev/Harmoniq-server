@@ -86,3 +86,17 @@ def test_live_upload_without_album(live):
         tags = dict(tf.tags)
     print(f"\nupload: {view['file']['filename']} {tags}")
     assert tags["TITLE"] and tags["ARTIST"] and view["file"]["transcoded"] is True
+
+
+def test_live_playlist_search_and_detail(live):
+    r = live.get("/v1/search", params={"q": "lofi beats", "type": "all"}, headers=HEADERS)
+    assert r.status_code == 200, r.text
+    sections = r.json()["sections"]
+    assert sections["songs"] and sections["videos"] and sections["playlists"], sections["errors"]
+    assert all(len(sections[k]) <= 10 for k in ("songs", "videos", "playlists"))
+    playlist_id = sections["playlists"][0]["playlist_id"]
+    r = live.get(f"/v1/playlists/{playlist_id}", params={"limit": 20}, headers=HEADERS)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tracks"] and all(len(t["video_id"]) == 11 for t in body["tracks"])
+    assert len(body["tracks"]) <= 20

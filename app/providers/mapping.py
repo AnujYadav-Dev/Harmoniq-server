@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from app.config import Settings
 from app.domain.models import (
-    Album, Artist, AudioFormat, Channel, OutputOption, PreviewInfo, SearchResult, Thumbnail,
-    VideoFlags, VideoMetadata,
+    Album, Artist, AudioFormat, Channel, OutputOption, PlaylistDetail, PlaylistResult, PreviewInfo, SearchResult,
+    Thumbnail, VideoFlags, VideoMetadata,
 )
 
 MP3_BEST_KBPS = 245  # libmp3lame -q:a 0 average
@@ -44,6 +44,83 @@ def music_result(r: dict) -> SearchResult:
         is_explicit=r.get("isExplicit"),
         thumbnails=_thumbs(r.get("thumbnails")),
         watch_url=f"https://music.youtube.com/watch?v={r['videoId']}",
+    )
+
+
+def _int(value) -> int | None:
+    try:
+        return int(str(value).replace(",", "")) if value is not None else None
+    except ValueError:
+        return None
+
+
+def playlist_watch_url(playlist_id: str) -> str:
+    return f"https://music.youtube.com/playlist?list={playlist_id}"
+
+
+def strip_browse_prefix(browse_id: str) -> str:
+    return browse_id[2:] if browse_id.startswith("VL") else browse_id
+
+
+def playlist_result(r: dict) -> PlaylistResult:
+    playlist_id = strip_browse_prefix(r["browseId"])
+    author = r.get("author")
+    if isinstance(author, list):  # some ytmusicapi versions return [{"name": ...}]
+        author = ", ".join(a.get("name", "") for a in author if a.get("name")) or None
+    return PlaylistResult(
+        playlist_id=playlist_id,
+        title=r.get("title") or "",
+        author=author or None,
+        item_count=_int(r.get("itemCount")),
+        thumbnails=_thumbs(r.get("thumbnails")),
+        watch_url=playlist_watch_url(playlist_id),
+    )
+
+
+def playlist_track(t: dict) -> SearchResult | None:
+    """A playlist entry in the search-result shape; None for unavailable or id-less entries."""
+    video_id = t.get("videoId")
+    if not video_id or len(video_id) != 11 or t.get("isAvailable") is False:
+        return None
+    is_song = t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV"
+    artists = [Artist(name=a["name"], channel_id=a.get("id")) for a in t.get("artists") or [] if a.get("name")]
+    album = t.get("album")
+    duration = t.get("duration_seconds")
+    return SearchResult(
+        video_id=video_id,
+        result_type="song" if is_song else "video",
+        title=t.get("title") or "",
+        artists=artists or None,
+        album=Album(name=album["name"], browse_id=album.get("id")) if album and album.get("name") else None,
+        duration=duration,
+        duration_text=t.get("duration") or duration_text(duration),
+        is_explicit=t.get("isExplicit"),
+        thumbnails=_thumbs(t.get("thumbnails")),
+        watch_url=(f"https://music.youtube.com/watch?v={video_id}" if is_song
+                   else f"https://www.youtube.com/watch?v={video_id}"),
+    )
+
+
+def playlist_detail(p: dict, playlist_id: str, max_tracks: int) -> PlaylistDetail:
+    raw = p.get("tracks") or []
+    tracks = [r for r in (playlist_track(t) for t in raw[:max_tracks]) if r is not None]
+    track_count = _int(p.get("trackCount"))
+    author = p.get("author")
+    if isinstance(author, dict):
+        author = author.get("name")
+    elif isinstance(author, list):
+        author = ", ".join(a.get("name", "") for a in author if a.get("name")) or None
+    return PlaylistDetail(
+        playlist_id=playlist_id,
+        title=p.get("title") or "",
+        author=author or None,
+        description=p.get("description") or None,
+        track_count=track_count,
+        duration=_int(p.get("duration_seconds")),
+        thumbnails=_thumbs(p.get("thumbnails")),
+        watch_url=playlist_watch_url(playlist_id),
+        tracks=tracks,
+        truncated=len(raw) > max_tracks or (track_count is not None and track_count > max_tracks),
     )
 
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from app import __version__
 from app.api.deps import Client, get_services, require_client
 from app.config import FORMATS
+from app.domain.models import SEARCH_TYPES
 from app.domain.errors import AppError
 
 router = APIRouter()
@@ -73,6 +74,9 @@ async def meta(request: Request, client: Client = Depends(require_client)):
             "musicbrainz": "musicbrainz" in services.resolver.names,
             "lastfm": "lastfm" in services.resolver.names,
             "filename_template": s.filename_template,
+            "search_types": list(SEARCH_TYPES),
+            "max_playlist_tracks": s.max_playlist_tracks,
+            "search_all_section_limit": s.search_all_section_limit,
         },
         "queue": {"waiting": services.jobs.depth, "active": len(services.registry.active_jobs())},
         "status": {

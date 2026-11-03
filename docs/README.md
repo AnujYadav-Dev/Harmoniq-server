@@ -3,7 +3,7 @@
 **harmoniq-server** is the backend that lets the Harmoniq Android music player search YouTube, preview a
 result, and save its audio, with full tags and cover art, into the app's music folder.
 
-> **Status (2026-11-03): v0.2.0 implemented.** The server runs locally and in Docker, tested end to end
+> **Status (2026-11-03): v0.3.0 implemented** (playlist search, `type=all`, `/v1/playlists/{id}`). The server runs locally and in Docker, tested end to end
 > against real YouTube, with full song metadata (album, track number, release date, genres, ISRC, synced
 > lyrics, cover art). The Android app's **Global Search is implemented** against it (staged in the app repo, not yet
 > committed; device and signed-build tests still open, see

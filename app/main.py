@@ -14,7 +14,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api import errors
-from app.api.v1 import downloads, search, system, videos
+from app.api.v1 import downloads, playlists, search, system, videos
 from app.config import Settings, get_settings, prepend_tools_to_path
 from app.jobs.maintenance import canary_loop, sweeper_loop
 from app.media.ffmpeg import tool_version
@@ -118,6 +118,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     errors.install(app)
     app.include_router(system.router)
-    for module in (search, videos, downloads):
+    for module in (search, videos, playlists, downloads):
         app.include_router(module.router, prefix="/v1")
     return app
