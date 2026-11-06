@@ -1,0 +1,29 @@
+# Sends the YTDLP_COOKIES secret to the server, which tests it before using it (docs/deployment-vps.md §11.4).
+# Secrets: YTDLP_COOKIES, OCI_COOKIES_KEY (restricted key for the `harmoniq` user), OCI_HOST, OCI_KNOWN_HOSTS.
+name: Update cookies
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send the cookies to the server
+        env:
+          COOKIES: ${{ secrets.YTDLP_COOKIES }}
+          SSH_KEY: ${{ secrets.OCI_COOKIES_KEY }}
+          KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
+          HOST: ${{ secrets.OCI_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/cookies_key && chmod 600 ~/.ssh/cookies_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key's forced command only runs update-cookies.sh, which reads the file from stdin and never prints it.
+          printf '%s\n' "$COOKIES" | ssh -i ~/.ssh/cookies_key -o BatchMode=yes "harmoniq@$HOST"

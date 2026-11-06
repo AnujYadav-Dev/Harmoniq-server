@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 
+from app.alerts import BlockAlerter
 from app.config import Settings
 from app.domain.errors import AppError, JobCancelled
 from app.jobs.pipeline import DownloadPipeline
@@ -18,10 +19,12 @@ BACKOFF_SECONDS = (10, 30)
 
 
 class JobManager:
-    def __init__(self, settings: Settings, registry: JobRegistry, pipeline: DownloadPipeline) -> None:
+    def __init__(self, settings: Settings, registry: JobRegistry, pipeline: DownloadPipeline,
+                 alerter: BlockAlerter | None = None) -> None:
         self.settings = settings
         self.registry = registry
         self.pipeline = pipeline
+        self.alerter = alerter
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self._workers: list[asyncio.Task] = []
 
@@ -102,6 +105,8 @@ class JobManager:
                         continue
                     log.info("Job %s failed: %s", job.id, err)
                     job.fail(err.as_job_error())
+                    if err.code == "upstream_blocked" and self.alerter is not None:
+                        self.alerter.record_blocked(str(err))
                     return
                 except Exception as exc:
                     log.exception("Job %s crashed", job.id)

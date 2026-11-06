@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from cachetools import TTLCache
 
+from app.alerts import BlockAlerter
 from app.config import Settings
 from app.jobs.manager import JobManager
 from app.jobs.pipeline import DownloadPipeline
@@ -77,7 +78,7 @@ class Services:
         pipeline = DownloadPipeline(settings, ytdlp, store, resolver)
         return cls(
             settings=settings, store=store, registry=registry, health=health, ytdlp=ytdlp,
-            music=music, pipeline=pipeline, jobs=JobManager(settings, registry, pipeline),
+            music=music, pipeline=pipeline, jobs=JobManager(settings, registry, pipeline, BlockAlerter(settings)),
             resolver=resolver, http=http,
             search_cache=TTLCache(maxsize=512, ttl=settings.search_cache_ttl),
             metadata_cache=TTLCache(maxsize=256, ttl=settings.metadata_cache_ttl),

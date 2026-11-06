@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     ytdlp_sleep_requests: float = 0.5
     canary_video_id: str = ""
 
+    # Alert emails (app/alerts.py)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    alert_email_to: str = ""
+
     # Metadata
     metadata_providers: str = "ytmusic,youtube,musicbrainz,lastfm,lyrics"
     lyrics_providers: str = "ytmusic,lrclib"
@@ -104,6 +111,10 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return self.app_env.lower() == "development"
+
+    @property
+    def alerts_enabled(self) -> bool:
+        return all((self.smtp_host, self.smtp_user, self.smtp_password, self.alert_email_to))
 
     @property
     def tokens(self) -> dict[str, str]:
