@@ -13,7 +13,7 @@ services:
       - "127.0.0.1:8000:8000"       # only the tunnel / reverse proxy on this host talks to it
     volumes:
       - ./data:/data
-      - ./secrets:/run/secrets:ro   # optional cookies.txt → YTDLP_COOKIES_FILE=/run/secrets/cookies.txt
+      - ./secrets:/run/secrets      # optional cookies.txt → YTDLP_COOKIES_FILE=/run/secrets/cookies.txt (yt-dlp rewrites it)
     restart: unless-stopped
     stop_grace_period: 1m
     healthcheck:

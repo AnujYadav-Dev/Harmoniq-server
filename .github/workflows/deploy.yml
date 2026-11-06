@@ -5,6 +5,13 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:   # these don't change the running server, so they shouldn't restart it
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".env.example"
+      - "docker-compose.yml"
+      - ".github/workflows/update-cookies.yml"
   workflow_dispatch:
 
 concurrency:
@@ -44,9 +51,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find the newest yt-dlp   # a new version changes the build arg, which skips the cached layer
+        id: ytdlp
+        run: echo "version=$(curl -fsS https://pypi.org/pypi/yt-dlp/json | jq -r .info.version)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
+          build-args: YTDLP_SPEC=yt-dlp[default]==${{ steps.ytdlp.outputs.version }}
           platforms: linux/arm64
           push: true
           tags: |
