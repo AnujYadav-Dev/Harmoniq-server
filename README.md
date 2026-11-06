@@ -22,7 +22,7 @@ its music library.
 | **Audio quality** | Keeps YouTube's original stream when possible (**Opus** or **M4A**, no re-encoding), or **MP3** VBR. Checks codec, duration, bitrate, sample rate and silence before serving |
 | **Metadata** | Embedded title, artists, album artist, album, track/disc n/total, full release date, genres, ISRC, square 1200 px cover and synced lyrics. Sources: YouTube Music, MusicBrainz, LRCLIB (optional Last.fm) |
 | **Access control** | Secret app token (`X-App-Token`) + per-install device ID, per-device rate limits |
-| **Resilience** | yt-dlp with Deno and an optional PO-token provider, IPv6 fallback when YouTube bot-checks a shared IPv4, hourly canary, cache and disk cleanup |
+| **Resilience** | yt-dlp with Deno, optional PO-token provider, proxy (e.g. Cloudflare WARP) and cookies, IPv6 fallback when YouTube bot-checks a shared IPv4, hourly canary, cache and disk cleanup |
 
 Full contract: [docs/api.md](docs/api.md).
 
@@ -42,7 +42,7 @@ Harmoniq app (Android) ──HTTPS + X-App-Token──▶ harmoniq-server ──
   server or rotates the token for every installed app, without a rebuild. Users can also point the app at their own
   harmoniq-server in its Settings.
 - Release builds of the app only accept **HTTPS**, so a deployed server needs a stable HTTPS address (Cloudflare
-  Tunnel recommended). A debug build can use your PC directly: run the server locally and
+  Tunnel at home, Nginx + Let's Encrypt on a VPS). A debug build can use your PC directly: run the server locally and
   `adb reverse tcp:8000 tcp:8000`.
 
 ## Quick start (local mode, Windows)
@@ -79,8 +79,12 @@ docker compose up -d --build
 Optional profiles: `--profile tunnel` (Cloudflare Tunnel for HTTPS) and `--profile pot` (PO-token provider if
 YouTube starts bot-checking the server).
 
-Deploying it for the app for the first time (host choice, Docker, `.env`, Cloudflare Tunnel, verification,
-updates, token rotation): follow [docs/deployment-guide.md](docs/deployment-guide.md).
+Deploying it for the app for the first time:
+
+| Where | Guide | Covers |
+|-------|-------|--------|
+| Home machine | [docs/deployment-guide.md](docs/deployment-guide.md) | Docker, `.env`, Cloudflare Tunnel, verification, updates, token rotation |
+| VPS / cloud VM | [docs/deployment-vps.md](docs/deployment-vps.md) | Running next to other services, Nginx + Let's Encrypt, GitHub Actions CI/CD with rollback, getting past YouTube's datacenter block |
 
 Once it's reachable over HTTPS, put its URL and token into the app repository's
 [`config/global-search.json`](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/config/global-search.json) (see the
@@ -94,19 +98,25 @@ YouTube changes often. When downloads start failing, update yt-dlp first:
 scripts\update-ytdlp.ps1
 ```
 
-Then restart the server. In Docker: `docker compose build --no-cache && docker compose up -d`.
+Then restart the server. In Docker: `docker compose build --no-cache && docker compose up -d`. On a VPS deployed
+through CI: [docs/deployment-vps.md §12](docs/deployment-vps.md#12-day-to-day-operations).
+
+If downloads fail with `upstream_blocked` ("Sign in to confirm you're not a bot"), YouTube is refusing the server's IP:
+[docs/deployment.md §6](docs/deployment.md#6-youtube-access-hardening).
 
 ## Tests
 
 ```powershell
-.venv\Scripts\python -m pip install pytest
+.venv\Scripts\python -m pip install pytest pytaglib
 ```
 
 ```powershell
 .venv\Scripts\python -m pytest
 ```
 
-That runs the offline suite: unit tests, API tests with fake YouTube providers, and real FFmpeg/tagging tests.
+That runs the offline suite: unit tests, API tests with fake YouTube providers, and real FFmpeg/tagging tests. Use
+`python -m pytest` rather than bare `pytest`, so that `app` can be imported. CI runs the same suite on every push to
+`main`.
 `.venv\Scripts\python -m pytest -m live` also runs end-to-end tests against real YouTube.
 
 ## Documentation
@@ -117,7 +127,8 @@ That runs the offline suite: unit tests, API tests with fake YouTube providers, 
 | [docs/api.md](docs/api.md) | Endpoints, JSON, error codes |
 | [docs/architecture.md](docs/architecture.md) | Design, code layout, job lifecycle |
 | [docs/download-flow.md](docs/download-flow.md) | Search → preview → download → FFmpeg → tags |
-| [docs/deployment-guide.md](docs/deployment-guide.md) | Step-by-step first deployment: Docker + Cloudflare Tunnel, verify, update, rotate, move, troubleshoot |
+| [docs/deployment-guide.md](docs/deployment-guide.md) | Step-by-step first deployment at home: Docker + Cloudflare Tunnel, verify, update, rotate, move, troubleshoot |
+| [docs/deployment-vps.md](docs/deployment-vps.md) | Step-by-step deployment on a VPS: isolation, Nginx + Certbot, CI/CD, rollback, YouTube access, operations |
 | [docs/deployment.md](docs/deployment.md) | Reference: local/Docker setup, env vars, HTTPS for the app, 24/7 |
 | [docs/android-integration-plan.md](docs/android-integration-plan.md) | Global Search in the app: design, status, deviations |
 | [docs/research.md](docs/research.md) | Library research and why this stack |
@@ -130,4 +141,4 @@ That runs the offline suite: unit tests, API tests with fake YouTube providers, 
 | [**Harmoniq**](https://github.com/AnujYadav-Dev/Harmoniq) | The Android music player that uses this server for Global Search |
 | [**Harmoniq-server**](https://github.com/AnujYadav-Dev/Harmoniq-server) (this repo) | This backend |
 
-Licence: AGPL-3.0-or-later, like Harmoniq (declared in `pyproject.toml`; the repository has no `LICENSE` file yet).
+Licence: AGPL-3.0-or-later, like Harmoniq. See [LICENSE](LICENSE).

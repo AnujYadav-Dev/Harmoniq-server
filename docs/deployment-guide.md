@@ -1,11 +1,14 @@
 # Deployment guide: first-time setup, step by step
 
-[← Docs index](README.md) · Reference: [deployment.md](deployment.md)
+[← Docs index](README.md) · VPS setup: [deployment-vps.md](deployment-vps.md) · Reference: [deployment.md](deployment.md)
 
 This guide takes you from nothing to a harmoniq-server that Harmoniq's `canary` and `release` builds can reach at a
 stable HTTPS address. It uses **server mode** (Docker Compose) with **Cloudflare Tunnel**, the setup the project
-recommends. Every option and environment variable is explained in [deployment.md](deployment.md); this guide only
-shows the path through them.
+recommends for a home machine. Every option and environment variable is explained in [deployment.md](deployment.md);
+this guide only shows the path through them.
+
+> **Deploying on a VPS or cloud VM, or next to other services?** Follow [deployment-vps.md](deployment-vps.md) instead:
+> Nginx + Let's Encrypt, CI/CD with rollback, and the extra steps YouTube demands from datacenter IPs.
 
 > Placeholders used below: `https://harmoniq.example.com` for your server URL, `hq_xxx…` for the app token,
 > `eyJxxx…` for the tunnel token. Never paste real tokens into docs, issues, chats or commits.
@@ -31,9 +34,9 @@ Your machine:  docker compose
 | | Home machine (PC, mini PC, NAS, Raspberry Pi 5) | VPS / cloud VM |
 |---|---|---|
 | YouTube IP reputation | **Good**: a normal household IP | **Poor**: datacenter IPs are often bot-checked |
-| Extra work | Keep it powered on; no sleep | PO-token provider and often a paid residential proxy ([deployment.md §6](deployment.md#6-youtube-access-hardening)) |
-| Cost | Electricity | Monthly fee + proxy |
-| Verdict | **Recommended** | Only if a home machine is impossible |
+| Extra work | Keep it powered on; no sleep | PO-token provider plus a WARP or residential proxy ([deployment-vps.md §11](deployment-vps.md#11-youtube-access-on-a-datacenter-ip)) |
+| Cost | Electricity | Monthly fee (free tiers exist), optional paid proxy |
+| Verdict | **Simplest** | Works, and is always on; see [deployment-vps.md](deployment-vps.md) |
 
 Why: the hard part of this server isn't CPU, it's YouTube accepting the machine's IP address
 ([deployment.md §2](deployment.md#2-where-to-host-it)). Resources for the owner plus a few testers: 1–2 CPU cores,
@@ -174,7 +177,7 @@ Shows the container; after about 30 s its status should read `healthy`.
 ```bash
 docker compose logs -f server
 ```
-Follows the log. Look for `harmoniq-server 0.2.0 starting; components: …`. A warning `APP_TOKENS is empty` means
+Follows the log. Look for `harmoniq-server 0.3.0 starting; components: …`. A warning `APP_TOKENS is empty` means
 `.env` wasn't edited. Press Ctrl+C to stop following (the server keeps running).
 
 ```bash
@@ -271,7 +274,7 @@ Must print `401`: requests without the token are rejected.
 ```bash
 curl -fsS "$BASE/v1/meta" -H "$H"
 ```
-Shows `server_version` (`0.2.0`), `components` (yt-dlp, FFmpeg, Deno versions) and `status.youtube`. After the first
+Shows `server_version` (`0.3.0`), `components` (yt-dlp, FFmpeg, Deno versions) and `status.youtube`. After the first
 canary run (about a minute after start, then hourly) `last_canary_ok` should be `true`.
 
 ```bash
@@ -420,7 +423,8 @@ Optional: point an uptime monitor at `https://harmoniq.example.com/readyz`.
 
 Only **`.env`** needs a backup: it holds the app token(s) and the tunnel token. Store a copy in a password manager.
 Everything else is replaceable: code is in git, `data/` is a cache, the image is rebuilt from the Dockerfile, and
-an optional `secrets/cookies.txt` can be exported again.
+an optional `secrets/cookies.txt` can be exported again
+([how to export it so it keeps working](deployment-vps.md#113-add-cookies-only-if-you-need-them)).
 
 ## 15. Troubleshooting
 
@@ -433,7 +437,7 @@ an optional `secrets/cookies.txt` can be exported again.
 | A Cloudflare error page instead of JSON | Tunnel down, or Service URL wrong | `docker compose ps` (is `tunnel` running?), `docker compose logs tunnel`; Service URL must be `http://server:8000` |
 | Tunnel shows **Down** / **Inactive** | Container stopped, token wrong or refreshed, machine offline | `docker compose --profile tunnel up -d`; recheck `CLOUDFLARE_TUNNEL_TOKEN` |
 | `/readyz` → `503` | Disk below `DISK_MIN_FREE_BYTES` (1 GiB), data folder not writable, or a tool missing | The `detail` says which. On Linux, check `./data` ownership vs `HARMONIQ_UID` |
-| Downloads fail with `upstream_blocked`; `status.youtube` is `blocked`; log says `YouTube bot-checked route …` | YouTube bot-checks your IP | Update yt-dlp (§10). Test IPv4 vs IPv6 (below); set `YTDLP_IP_VERSION=6` if only IPv6 works. Then PO-token provider / cookies ([deployment.md §6](deployment.md#6-youtube-access-hardening)) |
+| Downloads fail with `upstream_blocked`; `status.youtube` is `blocked`; log says `YouTube bot-checked route …` | YouTube bot-checks your IP | Update yt-dlp (§10). Test IPv4 vs IPv6 (below); set `YTDLP_IP_VERSION=6` if only IPv6 works. Then PO-token provider / proxy / cookies ([deployment.md §6](deployment.md#6-youtube-access-hardening)) |
 | Downloads fail with `upstream_error` | YouTube changed something; yt-dlp is outdated | Rebuild for the newest yt-dlp (§10) |
 | Disk full | `data/files` cache, old images/build cache | `STORAGE_MAX_BYTES` caps the cache (5 GiB default). `docker system df` shows Docker's usage; `docker image prune` removes dangling old images after rebuilds |
 
@@ -459,8 +463,8 @@ carries a `request_id` you can search for.
 4. Domain on Cloudflare, create the tunnel, `docker compose --profile tunnel up -d`, publish `harmoniq.<domain>` →
    `http://server:8000` (§6).
 5. Verify from outside: `/healthz`, `/readyz`, `401` without token, `/v1/meta`, a search and a download (§8).
-6. Put the URL and token into the app's `local.properties` for `canary`/`release`, build a **signed canary**, install
-   it, and run the test matrix (§9, [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it)).
+6. Put the URL and token into the app's `config/global-search.json`, build a **signed canary**, install it, and run
+   the test matrix (§9, [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it)).
 7. Set up the weekly yt-dlp update and back up `.env` (§10, §14).
 
 **Remaining work**
@@ -470,6 +474,4 @@ carries a `request_id` you can search for.
 | Device tests on Android 9 (API 28: legacy storage path + permission prompt) and Android 14 (API 34) | App, [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it) |
 | Signed `release` and `canary` builds tested on a device (R8/minification) | App `docs/05-release-and-distribution.md` |
 | The rest of the §16 test matrix (formats, duplicate, interrupted download, server down / wrong token / rate limited, multi-disc, non-Latin) | [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it) |
-| Commit both repositories (the app's Global Search changes are staged, not committed; server docs) | Both repos |
-| Add a `LICENSE` file (AGPL-3.0-or-later, as declared in `pyproject.toml`) to the server repository | Server repo |
 | After an AGP upgrade: move WorkManager past 2.10.x (2.11+ needs Room 2.7) and remove the `NullSafeMutableLiveData` lint exception | App, [android-integration-plan.md §17](android-integration-plan.md#17-implementation-status-and-deviations) |

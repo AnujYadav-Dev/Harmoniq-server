@@ -599,8 +599,9 @@ it can save a `.lrc` next to the song if wanted.
 `features.search_types` (v0.3.0) lists the `type` values `/v1/search` accepts. Older servers don't send it;
 clients should then assume `["song", "video"]`.
 
-`status.youtube` is `ok | degraded | blocked`, based on the latest canary and recent job error rates. The app can
-show a banner instead of letting users start downloads that will fail.
+`status.youtube` is `blocked` for 10 minutes after any bot check, `degraded` if the latest canary failed, otherwise
+`ok`. Without `CANARY_VIDEO_ID` nothing tests YouTube in the background, so it stays `ok` until a real job is blocked.
+The app can show a banner instead of letting users start downloads that will fail.
 
 ## Health
 

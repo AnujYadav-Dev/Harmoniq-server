@@ -6,12 +6,16 @@ How to run harmoniq-server: locally from a self-contained Python environment, or
 covers environment variables, YouTube-access hardening, keeping yt-dlp current, how the app reaches the server,
 and keeping it running 24/7.
 
-This is the **reference**. For a first deployment, follow the step-by-step
-[deployment-guide.md](deployment-guide.md) (Docker Compose + Cloudflare Tunnel, verification, connecting the app,
-updates, token rotation, moving machines, troubleshooting).
+This is the **reference**. For a first deployment, follow a step-by-step guide:
+
+- **At home:** [deployment-guide.md](deployment-guide.md) (Docker Compose + Cloudflare Tunnel, verification, connecting
+  the app, updates, token rotation, moving machines, troubleshooting).
+- **On a VPS:** [deployment-vps.md](deployment-vps.md) (running next to other services, Nginx + Let's Encrypt, GitHub
+  Actions CI/CD with rollback, YouTube access, operations).
 
 > Status: **implemented and tested** on Windows, in both local mode and Docker (Docker Desktop): setup, run,
-> live search and downloads in all three formats, restart and cache behaviour.
+> live search and downloads in all three formats, restart and cache behaviour. Also running in production on an arm64
+> Ubuntu VPS.
 
 ---
 
@@ -42,7 +46,7 @@ The biggest operational factor isn't CPU. It's **how YouTube treats the machine'
 | Host | IP reputation with YouTube | Recommendation |
 |------|----------------------------|----------------|
 | **Your own PC / home server** (mini PC, NAS, Raspberry Pi 5, old laptop) | **Good**: normal household IP | **Best for this project.** Use local mode or Docker |
-| VPS / cloud VM | **Poor**: datacenter IPs are often bot-checked ("Sign in to confirm you're not a bot") | Works only with the PO-token provider, and often also a paid residential proxy |
+| VPS / cloud VM | **Poor**: datacenter IPs are often bot-checked ("Sign in to confirm you're not a bot") | Works with the PO-token provider plus a proxy such as Cloudflare WARP or a paid residential one: [deployment-vps.md §11](deployment-vps.md#11-youtube-access-on-a-datacenter-ip) |
 | Serverless / PaaS (Cloud Run, Lambda, Vercel…) | Poor + shared IPs | **Not suitable** |
 
 Resources for one owner + a few testers: **1–2 CPU cores, 1 GB RAM, ~5 GB free disk**. Each running download uses
@@ -181,7 +185,7 @@ services:
       - "127.0.0.1:8000:8000"       # only the tunnel / reverse proxy on this host talks to it
     volumes:
       - ./data:/data
-      - ./secrets:/run/secrets:ro   # optional cookies.txt → YTDLP_COOKIES_FILE=/run/secrets/cookies.txt
+      - ./secrets:/run/secrets      # optional cookies.txt → YTDLP_COOKIES_FILE=/run/secrets/cookies.txt (yt-dlp rewrites it)
     restart: unless-stopped
     stop_grace_period: 1m
     healthcheck:
@@ -231,6 +235,11 @@ curl -fsS http://localhost:8000/readyz
 
 With the `pot` profile enabled, set `POT_PROVIDER_URL=http://pot-provider:4416` in `.env`. The PO-token plugin
 (`bgutil-ytdlp-pot-provider`) is installed in the image but does nothing unless that URL is set.
+
+The `./secrets` volume is writable because yt-dlp writes `cookies.txt` back every time it finishes with it.
+
+This file is for building and running on one machine. On a VPS with CI/CD, a separate `compose.yml` pulls a pre-built
+image: [deployment-vps.md §5](deployment-vps.md#5-composeyml).
 
 ---
 
@@ -303,18 +312,31 @@ One `.env` file, used by both modes. `.env.example` documents every variable wit
 |----------|---------|-------------|
 | `YTDLP_JS_RUNTIME` | `deno` | `deno` \| `node` \| `bun` \| `quickjs` |
 | `POT_PROVIDER_URL` | *(empty = off)* | e.g. `http://pot-provider:4416` (Docker) or `http://127.0.0.1:4416` |
-| `YTDLP_COOKIES_FILE` | *(empty)* | e.g. `secrets/cookies.txt` or `/run/secrets/cookies.txt` (Netscape format) |
-| `YTDLP_PROXY` | *(empty)* | e.g. `socks5://user:pass@host:port` |
+| `YTDLP_COOKIES_FILE` | *(empty)* | e.g. `secrets/cookies.txt` or `/run/secrets/cookies.txt` (Netscape format). Must be writable. A missing file is ignored |
+| `YTDLP_PROXY` | *(empty)* | Used for everything yt-dlp does, not for ytmusicapi, MusicBrainz or LRCLIB. e.g. `socks5://warp:1080` or `socks5://user:pass@host:port` |
 | `YTDLP_IP_VERSION` | `auto` | `auto`: use the OS default, and if YouTube bot-checks it, retry over IPv6 and keep using what worked (until restart). `6` / `4`: always use IPv6 / IPv4. Set `6` if you know your IPv4 is flagged, to skip the failed first attempt after each restart |
 | `YTDLP_SLEEP_REQUESTS` | `0.5` | Seconds between extractor HTTP requests |
-| `CANARY_VIDEO_ID` | *(empty = off)* | A stable, Creative Commons video tested hourly |
+| `CANARY_VIDEO_ID` | *(empty = off)* | A stable, Creative Commons video tested hourly. Without it `status.youtube` only changes after a real download is blocked |
+
+### Alert email
+
+Sends one email when 3 downloads are blocked by YouTube within 30 minutes, then none for 6 hours. Off unless the host, user, password and recipient are all set. Test it with `python -m app.alerts`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMTP_HOST` | *(empty = off)* | e.g. `smtp.gmail.com` |
+| `SMTP_PORT` | `587` | Must accept STARTTLS. Many cloud providers block port 25 |
+| `SMTP_USER` | *(empty)* | Login, also used as the sender. Don't use the account the YouTube cookies come from |
+| `SMTP_PASSWORD` | *(empty)* | Gmail: an [App Password](https://support.google.com/accounts/answer/185833) without spaces, not the normal password |
+| `ALERT_EMAIL_TO` | *(empty)* | Who gets the alert |
 
 ---
 
 ## 6. YouTube access hardening
 
 From your home connection, steps 1–3 are usually enough. Go further only if downloads start failing with
-`upstream_blocked`.
+`upstream_blocked`. On a datacenter IP, go straight to steps 4 and 5 ([what was measured on a real
+server](deployment-vps.md#11-youtube-access-on-a-datacenter-ip)).
 
 1. **Keep yt-dlp current** (§7). This fixes most failures.
 2. **Run from a home/residential IP** (§2).
@@ -338,11 +360,15 @@ From your home connection, steps 1–3 are usually enough. Go further only if do
    `networks:` block and use `YTDLP_IP_VERSION=4`, or switch to local mode.
 4. **PO-token provider.** Docker: `docker compose --profile pot up -d` and set `POT_PROVIDER_URL`. Local mode
    without Docker: the provider also has a script mode (needs Node.js), but running its container is simpler.
-5. **Cookies from a throwaway Google account** (also enables age-restricted videos): export them from a private
-   browser window that was *only* used to sign in and open YouTube once, into `secrets/cookies.txt`. Then close the
-   window without signing out. **Never use your personal account**: accounts used for automated downloading can be
-   suspended. Cookies last weeks to months.
-6. **Residential proxy** via `YTDLP_PROXY`. Only relevant if you move to a VPS.
+5. **A different exit IP** via `YTDLP_PROXY`. On a VPS, the free [Cloudflare WARP container](deployment-vps.md#5-composeyml)
+   together with the PO-token provider got past a block that the provider alone didn't. A paid residential proxy is the
+   most reliable option.
+6. **Cookies from a throwaway Google account** (also enables age-restricted videos), only if the steps above aren't
+   enough. **Never use your personal account**: accounts used for automated downloading can be suspended. Export them
+   from a private window that was *only* used to sign in and open YouTube, into `secrets/cookies.txt`, then close the
+   window at once without signing out and never reopen that session. Cookies from a window that keeps browsing die
+   within minutes; handled well they can last weeks to months. Details and how to check them:
+   [deployment-vps.md §11.3](deployment-vps.md#113-add-cookies-only-if-you-need-them).
 
 ---
 
@@ -355,6 +381,7 @@ and needs no code changes:
 |------|-------------------------|----------------------------------|
 | Local | `scripts\update-ytdlp.ps1` or `./scripts/update-ytdlp.sh` (runs `pip install -U "yt-dlp[default]"` inside `.venv`), then restart | `scripts\update-ytdlp.ps1 -Version 2026.10.26` · `-Nightly` |
 | Docker | `docker compose build --no-cache && docker compose up -d` | `docker compose build --build-arg YTDLP_SPEC="yt-dlp[default]==2026.10.26"` |
+| VPS with CI/CD | *Run workflow*: every build installs the newest version ([deployment-vps.md §12](deployment-vps.md#12-day-to-day-operations)) | Not built in |
 
 Tips:
 - Update roughly **weekly**, and immediately when downloads start failing with `upstream_error`.
@@ -366,9 +393,9 @@ Tips:
 
 ## 8. How the app reaches the server
 
-**Model:** you give testers the APK. The APK contains the server's **HTTPS URL** and a **secret app token**, and
-sends the token with every request (`X-App-Token`). The server rejects any request without a valid token. Testers
-install nothing else.
+**Model:** you give testers the APK. The app reads the server's **HTTPS URL** and an **app token** at runtime from a
+public config file, and sends the token with every request (`X-App-Token`). The server rejects any request without a
+valid token. Testers install nothing else.
 
 Because testers' phones can be anywhere (mobile data, other Wi-Fi), the server needs a URL that's reachable from
 the internet **over HTTPS**. HTTPS isn't optional here: over plain HTTP, anyone on the same network could read the
@@ -377,6 +404,7 @@ token.
 | Option | Works with | Effort | Notes |
 |--------|-----------|--------|-------|
 | **Cloudflare Tunnel** (recommended while the host is undecided) | Home PC, Raspberry Pi, VPS | Low | Run `cloudflared` next to the server. You get a stable `https://harmoniq.<your-domain>` with **no router ports opened** and your home IP hidden. Needs a (cheap) domain on a free Cloudflare account. Can be a second service in `docker-compose.yml` or a Windows service in local mode |
+| **Nginx + Certbot** + DNS name | VPS (public IP), especially if Nginx is already there | Medium | Used in production; each site keeps its own file and certificate. Step by step: [deployment-vps.md §8](deployment-vps.md#8-dns-nginx-and-the-certificate) |
 | **Caddy reverse proxy** + DNS name | VPS (public IP), or home with port 443 forwarded | Medium | Automatic Let's Encrypt HTTPS. On a home connection it needs port forwarding and dynamic DNS (DuckDNS works), and it exposes your home IP |
 | Same Wi-Fi, plain HTTP | Development only | None | `http://<pc-ip>:8000` from your own phone while building the app. Not for testers |
 
@@ -394,7 +422,8 @@ then rarely needs to change, even if the server moves from your PC to a Pi or a 
 - People who run **their own server** enter its URL and token in the app's Settings; that token stays on their phone
   (encrypted). Details: the app's [docs/09-global-search-server.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md).
 
-Step-by-step tunnel setup: [deployment-guide.md §6](deployment-guide.md#6-cloudflare-tunnel-with-your-own-domain).
+Step by step: [tunnel](deployment-guide.md#6-cloudflare-tunnel-with-your-own-domain) ·
+[Nginx + Certbot](deployment-vps.md#8-dns-nginx-and-the-certificate).
 
 ---
 
@@ -414,9 +443,10 @@ unattended.
 | Task | How |
 |------|-----|
 | **Logs** | stdout plus `data/logs/server.log` (rotated, 10 MB × 3). Search by `job_id` / `request_id` |
+| **Deploying** | On a VPS: push to `main`; roll back with `deploy.sh rollback` ([deployment-vps.md §12](deployment-vps.md#12-day-to-day-operations)) |
 | **Is YouTube working?** | `GET /v1/meta` → `status.youtube` and `last_canary_at` |
 | **Add a tester** | Send them the APK. Nothing changes on the server |
-| **Rotate the app token** (leaked, or a tester should lose access) | Add a new `id:secret` to `APP_TOKENS`, restart, build and share an APK with the new token **and a higher `versionCode`**, then remove the old entry and restart again. Old APKs stop working. Step by step: [deployment-guide.md §11](deployment-guide.md#11-rotating-the-app-token) |
+| **Rotate the app token** (leaked, or a tester should lose access) | Add a new `id:secret` to `APP_TOKENS`, restart, put the new token in the app's `config/global-search.json`, then a day later remove the old entry and restart again. No new APK. Step by step: [deployment-guide.md §11](deployment-guide.md#11-rotating-the-app-token) |
 | **Free disk space** | Stop the server and delete `data/files/*`. It's only a cache |
 | **Backups** | Only `.env` (app and tunnel tokens). `data/` is a cache; an optional `secrets/cookies.txt` can be exported again |
 | **Restarting** | Safe at any time. Running jobs are lost and the app resubmits them; finished files survive |

@@ -5,7 +5,7 @@
 This document describes the design of **harmoniq-server**: the components, how data flows between them, and
 how it can grow later. The reasons behind each dependency are in [research.md](research.md).
 
-> **Status:** implemented (v0.2.0). This document describes the code as built. The metadata pipeline added in
+> **Status:** implemented (current release: v0.3.0). This document describes the code as built. The metadata pipeline added in
 > v0.2.0 is specified in [server-implementation-plan.md](server-implementation-plan.md).
 >
 > **Scope:** personal project. One owner plus a few testers. The server runs on a single machine, as **one
@@ -261,7 +261,7 @@ updated_at, error, file_key, owners (device ids), attempts, cancel_event (asynci
 
 | Concern | Approach |
 |---------|----------|
-| **Authentication** | Every request carries the secret **app token** built into the APK (`X-App-Token`, checked against `APP_TOKENS` in constant time) and a per-install `X-Device-Id`. Jobs are visible only to the device that created them. Rotating the token cuts off old APKs. Details and limits: [deployment.md §8](deployment.md#8-how-the-app-reaches-the-server) |
+| **Authentication** | Every request carries the **app token** the app reads from its config file (`X-App-Token`, checked against `APP_TOKENS` in constant time) and a per-install `X-Device-Id`. Jobs are visible only to the device that created them. Rotating the token cuts off old APKs. Details and limits: [deployment.md §8](deployment.md#8-how-the-app-reaches-the-server) |
 | **Rate limiting** | Simple in-memory counters per device: `RATE_LIMIT_SEARCH_PER_MIN` (30), `RATE_LIMIT_DOWNLOADS_PER_HOUR` (60), `MAX_ACTIVE_JOBS_PER_DEVICE` (3). Plus a global cap, `RATE_LIMIT_GLOBAL_PER_MIN` (120), as a safety net if the token leaks. It counts only requests that cause YouTube traffic (uncached search/metadata, new downloads), so status polling and file downloads never use it up. `429` with `Retry-After` |
 | **Back-pressure** | When more than `QUEUE_MAX_DEPTH` (default 20) jobs are waiting: `503 queue_full` |
 | **Upstream protection** | Minimum delay between YouTube extractions (`YT_MIN_INTERVAL_SECONDS`) plus yt-dlp `sleep_interval_requests`. Spacing out requests keeps the IP's reputation healthy. If YouTube bot-checks the default route, the client retries once over IPv6 and remembers what worked (`YTDLP_IP_VERSION`) |

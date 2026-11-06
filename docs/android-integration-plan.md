@@ -2,8 +2,7 @@
 
 [← Docs index](README.md) · Companion document: [Server Implementation Plan](server-implementation-plan.md)
 
-> Status (2026-11-03): **implemented** in the app (Harmoniq 1.3.0 source, staged on the `dev` branch, not yet
-> committed). JVM unit tests pass; device tests, signed `canary`/`release` builds and most of the §16 matrix are
+> Status (2026-11-06): **implemented** and released in the app (Harmoniq 1.4.0), using a deployed server. JVM unit tests pass; device tests, signed `canary`/`release` builds and most of the §16 matrix are
 > still open. What differs from this plan and what is unverified: [§17](#17-implementation-status-and-deviations).
 > The plan text below is kept as the design record; code snippets are illustrative. App-side setup and
 > troubleshooting: the app's [docs/09-global-search-server.md](https://github.com/AnujYadav-Dev/Harmoniq/blob/main/docs/09-global-search-server.md). Server setup: [deployment-guide.md](deployment-guide.md).
@@ -408,7 +407,6 @@ MockWebServer, pipeline, worker under Robolectric, file names, library coverage,
 
 **Follow-ups**
 
-1. Commit the app changes (staged on `dev`) and the server docs.
-2. After an AGP upgrade: move WorkManager to 2.11+ together with Room 2.7, and drop the lint exception.
-3. Later: single-file scan instead of a full `fetch()`; read `HARMONIQ_SOURCE` for a reinstall-proof "Downloaded"
+1. After an AGP upgrade: move WorkManager to 2.11+ together with Room 2.7, and drop the lint exception.
+2. Later: single-file scan instead of a full `fetch()`; read `HARMONIQ_SOURCE` for a reinstall-proof "Downloaded"
    badge (§8).

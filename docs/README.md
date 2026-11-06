@@ -3,12 +3,13 @@
 **harmoniq-server** is the backend that lets the Harmoniq Android music player search YouTube, preview a
 result, and save its audio, with full tags and cover art, into the app's music folder.
 
-> **Status (2026-11-03): v0.3.0 implemented** (playlist search, `type=all`, `/v1/playlists/{id}`). The server runs locally and in Docker, tested end to end
-> against real YouTube, with full song metadata (album, track number, release date, genres, ISRC, synced
-> lyrics, cover art). The Android app's **Global Search is implemented** against it (staged in the app repo, not yet
-> committed; device and signed-build tests still open, see
-> [android-integration-plan.md §17](android-integration-plan.md#17-implementation-status-and-deviations)).
-> Quick start: [../README.md](../README.md). First deployment: [deployment-guide.md](deployment-guide.md).
+> **Status (2026-11-06): v0.3.0 implemented and deployed** (playlist search, `type=all`, `/v1/playlists/{id}`). The
+> server runs locally and in Docker, tested end to end against real YouTube, with full song metadata (album, track
+> number, release date, genres, ISRC, synced lyrics, cover art). It's in production on a VPS with automatic deploys
+> from `main`. The Android app's **Global Search** uses it; device and signed-build tests are tracked in
+> [android-integration-plan.md §17](android-integration-plan.md#17-implementation-status-and-deviations).
+> Quick start: [../README.md](../README.md). First deployment: [at home](deployment-guide.md) or
+> [on a VPS](deployment-vps.md).
 >
 > **Scope:** a **personal project** used by the owner and a few testers who get the APK directly. It isn't
 > public and isn't a service. The design is deliberately small: **one process, no Redis, no database**.
@@ -38,8 +39,9 @@ picks it up.
 | Caches, rate limits | In memory (`cachetools`) |
 | Persistence | **None.** Finished files + JSON sidecars in `data/`. SQLite later if history is wanted |
 | Local run | One folder: `.venv/` (from your installed Python), `tools/` (FFmpeg, Deno), `data/` |
-| Server run | **One Docker container** (`docker compose up -d`), same `.env` |
-| App → server | HTTPS URL + **secret app token** built into the APK; Cloudflare Tunnel recommended for HTTPS |
+| Server run | **One Docker container** (`docker compose up -d`), same `.env`; optional helper containers for PO tokens and a WARP proxy |
+| Delivery | GitHub Actions: test, build image, push to GHCR, health-gated deploy with rollback ([deployment-vps.md §9](deployment-vps.md#9-cicd-with-github-actions)) |
+| App → server | HTTPS URL + **app token** read at runtime from the app repo's `config/global-search.json`; Cloudflare Tunnel at home, Nginx + Let's Encrypt on a VPS |
 | Preview (app side) | Official IFrame player via `android-youtube-player` 13.1.0 |
 
 The reasoning for each choice is in [research.md §7](research.md#7-recommendation).
@@ -53,7 +55,8 @@ The reasoning for each choice is in [research.md §7](research.md#7-recommendati
 | 3 | [api.md](api.md) | Every endpoint with request/response JSON, error codes, headers, and a curl walkthrough |
 | 4 | [download-flow.md](download-flow.md) | Step-by-step search → preview → download → FFmpeg → tagging → delivery, with exact yt-dlp/FFmpeg settings, retries and failure handling |
 | 5 | [deployment.md](deployment.md) | Reference: local mode (one folder, Python venv) and server mode (Docker), env vars, YouTube-access tips, updating yt-dlp, how the app reaches the server, running 24/7 |
-| 5a | [deployment-guide.md](deployment-guide.md) | **Step-by-step first deployment** with Docker Compose + Cloudflare Tunnel: verify, connect the app, update, rotate tokens, move machines, troubleshoot, remaining work |
+| 5a | [deployment-guide.md](deployment-guide.md) | **Step-by-step first deployment at home** with Docker Compose + Cloudflare Tunnel: verify, connect the app, update, rotate tokens, move machines, troubleshoot |
+| 5b | [deployment-vps.md](deployment-vps.md) | **Step-by-step deployment on a VPS**: isolation from other services, Nginx + Certbot, CI/CD with rollback, YouTube access (WARP, PO tokens, cookies), operations, troubleshooting |
 | 6 | [server-implementation-plan.md](server-implementation-plan.md) | **Metadata & quality plan (v0.2.0)**: what the old notebook stored, what Harmoniq reads, providers, tag mapping, API changes |
 | 7 | [android-integration-plan.md](android-integration-plan.md) | **Android integration** (implemented): Global Search, preview, download, saving to `Download/Harmoniq`, library detection, testing, rollout, deviations from the plan |
 
@@ -63,33 +66,32 @@ How they fit together:
 research.md ──(decides dependencies)──▶ architecture.md ──(defines components)──┬──▶ api.md            (contract)
                                                                                ├──▶ download-flow.md  (behaviour)
                                                                                └──▶ deployment.md     (operations)
-                                                                                      └──▶ deployment-guide.md (first deployment, step by step)
+                                                                                      ├──▶ deployment-guide.md (first deployment at home)
+                                                                                      └──▶ deployment-vps.md   (deployment on a VPS, CI/CD)
 ```
 
 ## Things to know
 
-1. **Personal use only.** Testers get the APK from you; the server only accepts requests carrying the app's secret
-   token, over HTTPS, and the URL is never published. The download feature stays out of any Google Play build
+1. **Personal use only.** Testers get the APK from you; the server only accepts requests carrying the app token, over
+   HTTPS. Keep it small: the token in the app's public config file is an app key against bots, not a password. The download feature stays out of any Google Play build
    ([research.md §6.1](research.md#61-legal--terms-of-service--read-this-first)).
-2. **Run it from home.** YouTube often bot-checks cloud/datacenter IPs. Your own PC or a home server avoids most
-   of that ([deployment.md §2](deployment.md#2-where-to-host-it)).
+2. **Home is easiest.** YouTube often bot-checks cloud/datacenter IPs. Your own PC or a home server avoids most of that
+   ([deployment.md §2](deployment.md#2-where-to-host-it)). A VPS works too, with extra steps
+   ([deployment-vps.md §11](deployment-vps.md#11-youtube-access-on-a-datacenter-ip)).
 3. **Update yt-dlp regularly.** It's one command in both modes
    ([deployment.md §7](deployment.md#7-keeping-yt-dlp-current)).
 4. **One process.** Job state is in memory, so run exactly one server process. A restart forgets running jobs (the
    app resubmits) but keeps finished files.
 5. **Preview never goes through the server.** YouTube stream URLs are bound to the IP that requested them, so the
    phone uses the official embed player instead.
-6. **Licence.** Harmoniq is AGPL-3.0. The server should be AGPL-3.0 too, which is compatible with the
-   GPL-licensed dependencies (mutagen, the PO-token plugin).
+6. **Licence.** Harmoniq and this server are AGPL-3.0, which is compatible with the GPL-licensed dependencies
+   (mutagen, the PO-token plugin).
 
 ## Next steps
 
-The server and the app integration are implemented. What's left is deployment and testing:
+The server and the app integration are implemented and deployed. What's left is testing:
 
-1. Deploy the server with a stable HTTPS URL: [deployment-guide.md](deployment-guide.md) (§16 lists the steps in
-   order).
-2. Build a signed `canary` APK against it and run the test matrix in
+1. Build a signed `canary` APK against it and run the test matrix in
    [android-integration-plan.md §16](android-integration-plan.md#16-validating-the-complete-flow-before-testers-get-it),
    including Android 9 (API 28) and Android 14 (API 34) devices.
-3. Commit both repositories and add a `LICENSE` file (AGPL-3.0-or-later) to this one.
-4. Remaining work is tracked in [deployment-guide.md §16](deployment-guide.md#16-next-steps--remaining-work).
+2. Remaining work is tracked in [deployment-guide.md §16](deployment-guide.md#16-next-steps--remaining-work).
